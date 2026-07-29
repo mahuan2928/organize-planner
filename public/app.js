@@ -2608,7 +2608,7 @@ function renderActions() {
 }
 
 // ---- toolbar / domain メニュー ----
-const DOMAIN_MENU_IDS = ['dataMenu', 'planMenu', 'collabMenu'];
+const DOMAIN_MENU_IDS = ['displayMenu', 'collabMenu', 'manageMenu'];
 const closeMore = () => { DOMAIN_MENU_IDS.forEach(id => { const el = $(id); if (el) el.hidden = true; }); };
 function toggleDomainMenu(menuId) {
   const menu = $(menuId);
@@ -2621,9 +2621,9 @@ function bindDomainMenu(btnId, menuId) {
   const btn = $(btnId);
   if (btn) btn.onclick = (e) => { e.stopPropagation(); toggleDomainMenu(menuId); };
 }
-bindDomainMenu('dataMenuBtn', 'dataMenu');
-bindDomainMenu('planMenuBtn', 'planMenu');
+bindDomainMenu('displayMenuBtn', 'displayMenu');
 bindDomainMenu('collabMenuBtn', 'collabMenu');
+bindDomainMenu('manageMenuBtn', 'manageMenu');
 document.addEventListener('click', (e) => { if (!e.target.closest('.more-wrap')) closeMore(); });
 $('reload').onclick = () => { closeMore(); guardUnsaved('再読み込みすると、未保存の変更は破棄されます。', load); };
 $('reset').onclick = () => {

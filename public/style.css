@@ -102,23 +102,19 @@ body {
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
 .tb-group {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px;
-  padding: 3px 6px 3px 8px; border: 1px solid var(--line);
-  border-radius: 12px; background: #fff;
+  padding: 2px; border: 1px solid transparent;
+  border-radius: 12px; background: transparent;
 }
 .tb-label {
   flex: none; font-size: 10.5px; line-height: 1; color: var(--ink-3);
   font-weight: 700; letter-spacing: .04em;
 }
-.tb-search { border-color: transparent; background: transparent; padding-left: 2px; }
-.tb-see { border-color: #D6E4FD; background: var(--primary-soft); }
-.tb-see .tb-label { color: var(--primary); }
-.tb-data { border-color: #CDEFE1; background: #F0FBF6; }
-.tb-data .tb-label { color: var(--success); }
-.tb-plan { border-color: #FDE7C7; background: #FFF8ED; }
-.tb-plan .tb-label { color: #B76A00; }
-.tb-collab { border-color: #E3D7FF; background: #F7F2FF; }
-.tb-collab .tb-label { color: #6D3DD3; }
-.tb-help { border-color: transparent; background: transparent; padding-left: 2px; }
+.tb-see { padding: 3px 4px; border-color: var(--line); background: #fff; }
+.tb-search { padding-left: 2px; }
+.tb-display, .tb-manage, .tb-help { padding-left: 0; }
+.tb-collab .btn-domain { color: #5B35C8; border-color: #D9CEFF; background: #F7F2FF; }
+.tb-collab .btn-domain:hover { color: #4B28B7; border-color: #C6B6FF; background: #F0EAFF; }
+.tb-action { padding-left: 2px; }
 
 /* stats badge */
 .stats {
@@ -145,7 +141,11 @@ body {
 .btn-primary:active { background: #1B45BF; }
 .btn-guide { color: var(--primary); border-color: #D6E4FD; background: var(--primary-soft); }
 .btn-guide:hover { color: var(--primary-hover); border-color: #BFD3FB; background: #E4EDFE; }
-.btn-domain { height: 32px; padding: 0 10px; font-size: 12.5px; font-weight: 650; background: #fff; }
+.btn-domain { height: 32px; padding: 0 11px; font-size: 12.5px; font-weight: 650; background: #fff; }
+.btn-help {
+  width: 32px; height: 32px; padding: 0; border-radius: 50%;
+  font-size: 14px; font-weight: 800;
+}
 
 .btn-warn { color: var(--warning); border-color: var(--warning-line); background: var(--surface); }
 .btn-warn:hover:not(:disabled) { background: var(--warning-bg); border-color: var(--warning-line); color: var(--warning); }
@@ -715,7 +715,7 @@ body {
   .tb-see, .tb-search { flex: 1 1 100%; }
   .tb-see { flex-wrap: wrap; }
   .tb-see .view-seg { flex: 1; }
-  .tb-data, .tb-plan, .tb-collab, .tb-help { flex: 0 1 auto; }
+  .tb-display, .tb-action, .tb-collab, .tb-manage, .tb-help { flex: 0 1 auto; }
   .search-input { width: 180px; }
   .search-input:focus { width: 200px; }
   .toolbar-seg { overflow-x: auto; max-width: 100%; }
