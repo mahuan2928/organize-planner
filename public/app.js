@@ -167,28 +167,43 @@ let onboardingResize = null;
 const ONBOARDING_STEPS = [
   {
     title: '組織プランナーへようこそ',
-    body: 'このガイドでは、組織変更の基本手順を確認します。\n1. 部門を探す → 2. 構造を確認 → 3. 下書きを作る → 4. 差分を確認 → 5. 予約を確定、の流れです。',
-    safe: '実行するまで、Lark 側の正式な組織は変更されません。'
+    body: 'このガイドでは、実際の組織変更に近い流れで使い方を確認します。',
+    tasks: ['対象を検索する', '組織構造を確認する', 'ドラッグで下書きを作る', '差分とリスクを確認する', '予約プランを作成・確定する'],
+    safe: '所要時間は約 1 分です。実行するまで、Lark 側の正式な組織は変更されません。'
   },
   {
     selector: '#search',
     title: '1. 変更したい部門を探す',
-    body: 'まずは検索で対象部門やメンバーを見つけます。\n大きな組織では、全体を眺めるより検索から始めると迷いにくくなります。'
+    body: 'まずは検索で対象部門やメンバーを見つけます。大きな組織では、全体を眺めるより検索から始めると迷いにくくなります。',
+    tasks: ['部門名またはメンバー名を入力', '候補を選択して組織図へ移動', '右側の詳細パネルで所属を確認']
   },
   {
     selector: '#chartWrap',
     title: '2. 構造を確認して下書きを作る',
-    body: '中央のキャンバスで部門関係を確認します。\n部門やメンバーをドラッグすると、変更は下書きとして保存されます。'
+    body: '中央のキャンバスで、親部門・子部門・所属メンバーを確認します。',
+    tasks: ['部門をクリックして展開', '必要に応じて「全員」に切り替え', '部門やメンバーをドラッグして下書きを作成'],
+    safe: 'ここで作成されるのは下書きです。まだ Lark には反映されません。'
   },
   {
     selector: '#sidePanel',
     title: '3. 差分とリスクを確認する',
-    body: '右側のパネルには、下書きの変更内容が表示されます。\n実行前に、対象部門・対象メンバー・削除の有無を確認してください。'
+    body: '右側のパネルには、下書きで発生した変更が一覧化されます。',
+    tasks: ['移動・責任者変更・削除予定を確認', '詳細タブで Before / After を確認', '不要な変更があれば破棄または戻す']
   },
   {
     selector: '#actionMain',
-    title: '4. 予約プランを作成して確定する',
-    body: '変更があると、右上の主ボタンから予約プランを作成できます。\n最後に予約を確定した時点で、初めて Lark に反映されます。'
+    title: '4. 予約プランを作成する',
+    body: '変更があると、右上の主ボタンから予約プランを作成できます。',
+    tasks: ['変更件数を確認', '予約プラン名を入力', '保存後に実行前レビューへ進む'],
+    safe: '予約プラン作成だけでは Lark 組織は変更されません。'
+  },
+  {
+    selector: '#actionMain',
+    title: '5. 最後に予約を確定する',
+    body: '予約の確定が、正式な Lark 反映の最終ステップです。',
+    tasks: ['実行対象件数を確認', '削除や大きな異動がないか確認', '問題なければ予約を確定'],
+    safe: '不安な場合は、確定前に右側の「変更内容」をもう一度確認してください。',
+    finalCta: '検索から始める'
   }
 ];
 
@@ -253,13 +268,14 @@ function renderOnboarding() {
       <div class="ob-kicker">はじめてガイド ${onboardingStep + 1} / ${ONBOARDING_STEPS.length}</div>
       <div id="ob-title" class="ob-title">${esc(step.title)}</div>
       <div class="ob-body">${esc(step.body)}</div>
+      ${step.tasks ? `<ol class="ob-tasklist">${step.tasks.map(t => `<li>${esc(t)}</li>`).join('')}</ol>` : ''}
       ${step.safe ? `<div class="ob-safe">${esc(step.safe)}</div>` : ''}
       <div class="ob-footer">
         <div class="ob-progress" aria-hidden="true">${dots}</div>
         <div class="ob-actions">
           ${onboardingStep > 0 ? '<button class="ob-prev" type="button">戻る</button>' : ''}
           <button class="ob-skip" type="button">スキップ</button>
-          <button class="ob-next" type="button">${onboardingStep === ONBOARDING_STEPS.length - 1 ? '完了' : '次へ'}</button>
+          <button class="ob-next" type="button">${step.finalCta || (onboardingStep === ONBOARDING_STEPS.length - 1 ? '完了' : '次へ')}</button>
         </div>
       </div>
     </section>`;
@@ -269,6 +285,11 @@ function renderOnboarding() {
   if (prev) prev.onclick = () => { onboardingStep -= 1; renderOnboarding(); };
   layer.querySelector('.ob-skip').onclick = () => closeOnboarding(true);
   layer.querySelector('.ob-next').onclick = () => {
+    if (step.finalCta) {
+      closeOnboarding(true);
+      $('search') && $('search').focus();
+      return;
+    }
     onboardingStep += 1;
     if (onboardingStep >= ONBOARDING_STEPS.length) closeOnboarding(true);
     else renderOnboarding();

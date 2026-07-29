@@ -1177,13 +1177,27 @@ body {
   pointer-events: none; transition: left .16s ease, top .16s ease, width .16s ease, height .16s ease;
 }
 .ob-card {
-  position: fixed; width: 336px; max-width: calc(100vw - 32px); padding: 18px;
+  position: fixed; width: 372px; max-width: calc(100vw - 32px); padding: 18px;
   border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
   box-shadow: var(--sh-lg); pointer-events: auto;
 }
 .ob-kicker { font-size: 12px; color: var(--primary); font-weight: 700; margin-bottom: 6px; }
 .ob-title { font-size: 17px; line-height: 1.35; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
 .ob-body { font-size: 13px; line-height: 1.7; color: var(--ink-2); white-space: pre-line; }
+.ob-tasklist {
+  list-style: none; counter-reset: obtask; display: flex; flex-direction: column; gap: 8px;
+  margin: 12px 0 0; padding: 0;
+}
+.ob-tasklist li {
+  counter-increment: obtask; display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; line-height: 1.45;
+}
+.ob-tasklist li::before {
+  content: counter(obtask); flex: none; width: 18px; height: 18px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--primary-soft); color: var(--primary); font-size: 10.5px; font-weight: 800;
+}
 .ob-safe {
   margin-top: 12px; padding: 10px 12px; border-radius: 12px;
   border: 1px solid #D6E4FD; background: var(--primary-soft);
