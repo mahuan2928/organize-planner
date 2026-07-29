@@ -2641,6 +2641,7 @@ $('collapseAll').onclick = () => { closeMore(); EXPANDED.clear(); render(); };
 $('fit').onclick = () => { closeMore(); chart && chart.fit(); };
 $('menuReview').onclick = () => { closeMore(); switchTab('review'); showPanel(); };
 $('menuHistory').onclick = () => { closeMore(); switchTab('hist'); showPanel(); };
+$('exportTreePdf').onclick = () => { closeMore(); exportTreePdf(); };
 $('menuChatGroup').onclick = () => {
   closeMore();
   if (VIEW !== 'outline') {
@@ -2654,6 +2655,62 @@ $('menuChatGroup').onclick = () => {
   }
   setTimeout(openJobChatModal, 0);
 };
+function ensureChartViewForExport() {
+  if (VIEW === 'chart') return;
+  VIEW = 'chart';
+  document.querySelectorAll('#viewSeg .vseg').forEach(b => {
+    const on = b.dataset.view === VIEW;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  render();
+}
+function exportTreePdf() {
+  ensureChartViewForExport();
+  requestAnimationFrame(() => {
+    try { chart && chart.fit(); } catch (_) {}
+    setTimeout(() => {
+      const svg = document.querySelector('#chart svg');
+      if (!svg) { showToast('出力できるツリー図がありません。', true); return; }
+      const clone = svg.cloneNode(true);
+      clone.removeAttribute('style');
+      clone.setAttribute('width', '100%');
+      clone.setAttribute('height', 'auto');
+      clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      const title = document.querySelector('.title')?.textContent?.trim() || '組織プランナー';
+      const stamp = new Date().toLocaleString('ja-JP');
+      const stats = $('stats')?.textContent || '';
+      const styles = `
+        <style>
+          @page { size: A3 landscape; margin: 10mm; }
+          * { box-sizing: border-box; }
+          body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #172033; background: #fff; }
+          .pdf-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #DDE3EE; }
+          .pdf-title { font-size: 18px; font-weight: 800; }
+          .pdf-meta { font-size: 11px; color: #667085; text-align: right; line-height: 1.6; }
+          .pdf-chart { width: 100%; overflow: visible; }
+          svg { width: 100%; max-height: calc(100vh - 38mm); }
+          .oc-card { box-shadow: none !important; }
+          .oc-handles, .oc-detail-btn, .oc-info-handle, .oc-primary-handle, .oc-del-handle { display: none !important; }
+          @media print { .no-print { display: none !important; } }
+        </style>`;
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)} ツリー図</title>${styles}</head><body>
+        <div class="pdf-head">
+          <div><div class="pdf-title">${esc(title)} ツリー図</div><div class="pdf-meta" style="text-align:left">${esc(stats)}</div></div>
+          <div class="pdf-meta">出力日時: ${esc(stamp)}<br>表示: ${DENSITY === 'full' ? '全員' : '部門のみ'}</div>
+        </div>
+        <div class="pdf-chart">${clone.outerHTML}</div>
+        <script>window.onload=()=>setTimeout(()=>{window.focus();window.print();},250);<\/script>
+      </body></html>`;
+      const win = window.open('', '_blank');
+      if (!win) { showToast('ポップアップがブロックされました。ブラウザ設定を確認してください。', true); return; }
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+      showToast('印刷画面で「PDFに保存」を選択してください。');
+    }, 350);
+  });
+}
 function setNoiseFilter(on) {
   HIDE_NOISE_DEPTS = !!on;
   localStorage.setItem('orgplanner_hide_noise_depts', HIDE_NOISE_DEPTS ? '1' : '0');
