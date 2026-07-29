@@ -1431,12 +1431,22 @@ async function doCreateJobChatGroup(name, withOpen) {
     JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名` };
     showToast('Lark チャットグループを作成しました。');
   } catch (e) {
-    JOB_CHAT_RESULT = { ok: false, message: `作成できませんでした: ${String((e && e.message) || e)}` };
+    JOB_CHAT_RESULT = { ok: false, message: chatGroupErrorMessage(e) };
   } finally {
     JOB_CHAT_BUSY = false;
     renderJobChatPreview();
     renderJobChatPanel();
   }
+}
+function chatGroupErrorMessage(e) {
+  const raw = String((e && e.message) || e || '');
+  if (/232025/.test(raw) || /Bot ability is not activated/i.test(raw)) {
+    return '作成できませんでした: Lark アプリの Bot 機能が有効化されていません。開発者コンソールで Bot 機能を有効化し、アプリを再公開してください。（詳細: Lark 232025）';
+  }
+  if (/99992361/.test(raw) || /open_id cross app/i.test(raw)) {
+    return '作成できませんでした: メンバーIDをこのアプリ用に変換できませんでした。メールアドレスと Contact 権限を確認してください。（詳細: Lark 99992361）';
+  }
+  return `作成できませんでした: ${raw}`;
 }
 // ---- 一覧（アウトライン）: カラーアバター＋責任者チップ＋人数バッジ＋階層ガイド線 ----
 const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
