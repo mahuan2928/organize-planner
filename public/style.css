@@ -1051,13 +1051,34 @@ body {
 .alt-btn { font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
 .alt-btn:hover { background: var(--surface-2); }
 .alt-body { padding: 10px 16px 28px; }
-.job-chat-card {
-  max-width: 840px; margin: 12px auto 0; padding: 14px;
-  border: 1px solid #D6E4FD; border-radius: 16px; background: var(--primary-soft);
+.job-chat-entry {
+  max-width: 840px; margin: 12px auto 0; padding: 10px 12px;
+  border: 1px solid #D6E4FD; border-radius: 14px; background: var(--primary-soft);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.jc-entry-title { margin-top: 3px; font-size: 12.5px; color: var(--ink-2); }
+.jc-open {
+  flex: none; height: 32px; padding: 0 13px; border-radius: var(--r-md);
+  border: 1px solid var(--primary); background: var(--primary); color: #fff;
+  font: inherit; font-size: 13px; font-weight: 750; cursor: pointer; white-space: nowrap;
+}
+.jc-open:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.jc-overlay {
+  position: fixed; inset: 0; z-index: 130; display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(17, 24, 39, .34);
+}
+.jc-modal {
+  width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: auto;
+  padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--sh-lg);
 }
 .jc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .jc-kicker { font-size: 11px; color: var(--primary); font-weight: 750; letter-spacing: .04em; }
 .jc-title { margin-top: 3px; font-size: 14px; font-weight: 750; color: var(--ink); }
+.jc-close {
+  flex: none; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-3); font: inherit; font-size: 18px; cursor: pointer;
+}
+.jc-close:hover { background: var(--surface-2); color: var(--ink); }
 .jc-count { flex: none; padding: 4px 9px; border-radius: 999px; background: #fff; color: var(--primary); font-size: 12px; font-weight: 750; border: 1px solid #D6E4FD; }
 .jc-controls { display: grid; grid-template-columns: minmax(140px, 190px) 1fr auto; gap: 10px; align-items: end; }
 .jc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -1092,9 +1113,19 @@ body {
 .jc-result { margin-top: 10px; padding: 9px 10px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
 .jc-result.ok { color: var(--success); background: var(--success-bg); border: 1px solid var(--success-line); }
 .jc-result.ng { color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-line); }
+.jc-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.jc-secondary {
+  height: 34px; padding: 0 14px; border-radius: var(--r-md); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer;
+}
+.jc-secondary:hover { background: var(--surface-2); color: var(--ink); }
 @media (max-width: 760px) {
+  .job-chat-entry { align-items: flex-start; flex-direction: column; }
+  .jc-open { width: 100%; }
   .jc-controls { grid-template-columns: 1fr; }
   .jc-create { width: 100%; }
+  .jc-modal-actions { flex-direction: column-reverse; }
+  .jc-secondary { width: 100%; }
 }
 /* アウトライン（一覧）: カラーアバター＋責任者チップ＋人数バッジ＋階層ガイド線 */
 .olx-list { max-width: 840px; margin: 0 auto; }
