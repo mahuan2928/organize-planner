@@ -41,37 +41,49 @@
     </div>
 
     <div class="toolbar">
-      <div id="viewSeg" class="view-seg" role="tablist" aria-label="表示スタイル">
-        <button class="vseg on" data-view="chart" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/></svg>組織図</button>
-        <button class="vseg" data-view="outline" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>一覧</button>
-        <button class="vseg" data-view="board" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>部門ボード</button>
+      <div class="tb-group tb-view">
+        <span class="tb-label">表示</span>
+        <div id="viewSeg" class="view-seg" role="tablist" aria-label="表示スタイル">
+          <button class="vseg on" data-view="chart" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/></svg>組織図</button>
+          <button class="vseg" data-view="outline" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>一覧</button>
+          <button class="vseg" data-view="board" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>部門ボード</button>
+        </div>
       </div>
-      <div class="search-wrap">
-        <input id="search" class="search-input" type="text" placeholder="部門名・メンバー名で検索" autocomplete="off">
-        <div id="search-results" class="search-results" hidden></div>
+      <div class="tb-group tb-search">
+        <span class="tb-label">検索</span>
+        <div class="search-wrap">
+          <input id="search" class="search-input" type="text" placeholder="部門名・メンバー名で検索" autocomplete="off">
+          <div id="search-results" class="search-results" hidden></div>
+        </div>
       </div>
-      <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか">
-        <button class="dseg on" data-density="simple" role="tab" aria-selected="true">部門のみ</button>
-        <button class="dseg" data-density="full" role="tab">全員</button>
+      <div class="tb-group tb-density">
+        <span class="tb-label">密度</span>
+        <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか">
+          <button class="dseg on" data-density="simple" role="tab" aria-selected="true">部門のみ</button>
+          <button class="dseg" data-density="full" role="tab">全員</button>
+        </div>
+        <label id="reportToggleWrap" class="report-toggle" hidden title="上長（レポートライン）の関係を線で表示します"><input type="checkbox" id="reportToggle"><span>レポートライン</span></label>
       </div>
-      <label id="reportToggleWrap" class="report-toggle" hidden title="上長（レポートライン）の関係を線で表示します"><input type="checkbox" id="reportToggle"><span>レポートライン</span></label>
-      <button id="guideBtn" class="btn btn-guide" type="button">ガイド</button>
-      <button id="actionMain" class="btn btn-primary" disabled>変更なし</button>
-      <div class="more-wrap">
-        <button id="moreBtn" class="btn btn-icon" title="その他のメニュー" aria-label="その他のメニュー">⋯</button>
-        <div id="moreMenu" class="more-menu" hidden>
-          <button id="layout" class="mm-item">表示: コンパクト</button>
-          <button id="expandAll" class="mm-item">すべて展開</button>
-          <button id="collapseAll" class="mm-item">すべて折りたたむ</button>
-          <button id="fit" class="mm-item">全体を表示</button>
-          <label class="mm-item mm-check"><input id="hideNoiseDepts" type="checkbox"> テスト/デモ部門を隠す</label>
-          <div class="mm-sep"></div>
-          <button id="planList" class="mm-item">予約プラン一覧…</button>
-          <button id="csvImport" class="mm-item">CSVインポート…</button>
-          <button id="reload" class="mm-item">再読み込み</button>
-          <button id="reset" class="mm-item mm-warn" disabled>変更を破棄…</button>
-          <div class="mm-sep"></div>
-          <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>
+      <div class="tb-group tb-actions">
+        <span class="tb-label">操作</span>
+        <button id="guideBtn" class="btn btn-guide" type="button">ガイド</button>
+        <button id="actionMain" class="btn btn-primary" disabled>変更なし</button>
+        <div class="more-wrap">
+          <button id="moreBtn" class="btn btn-icon" title="その他のメニュー" aria-label="その他のメニュー">⋯</button>
+          <div id="moreMenu" class="more-menu" hidden>
+            <button id="layout" class="mm-item">表示: コンパクト</button>
+            <button id="expandAll" class="mm-item">すべて展開</button>
+            <button id="collapseAll" class="mm-item">すべて折りたたむ</button>
+            <button id="fit" class="mm-item">全体を表示</button>
+            <label class="mm-item mm-check"><input id="hideNoiseDepts" type="checkbox"> テスト/デモ部門を隠す</label>
+            <div class="mm-sep"></div>
+            <button id="planList" class="mm-item">予約プラン一覧…</button>
+            <button id="csvImport" class="mm-item">CSVインポート…</button>
+            <button id="reload" class="mm-item">再読み込み</button>
+            <button id="reset" class="mm-item mm-warn" disabled>変更を破棄…</button>
+            <div class="mm-sep"></div>
+            <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>
+          </div>
         </div>
       </div>
     </div>
