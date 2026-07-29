@@ -1287,7 +1287,7 @@ function jobChatMembers() {
 function renderJobChatPanel() {
   const panel = $('job-chat-panel');
   if (!panel || VIEW !== 'outline') return;
-  const result = JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${esc(JOB_CHAT_RESULT.message)}</div>` : '';
+  const result = JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${JOB_CHAT_RESULT.ok ? '完了: ' : ''}${esc(JOB_CHAT_RESULT.message)}</div>` : '';
   panel.innerHTML = `
     <section class="job-chat-entry">
       <div>
@@ -1430,11 +1430,12 @@ async function doCreateJobChatGroup(name, withOpen) {
     if (!r.ok) throw new Error(r.error || 'チャットグループ作成に失敗しました');
     JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名` };
     showToast('Lark チャットグループを作成しました。');
+    closeJobChatModal();
   } catch (e) {
     JOB_CHAT_RESULT = { ok: false, message: chatGroupErrorMessage(e) };
   } finally {
     JOB_CHAT_BUSY = false;
-    renderJobChatPreview();
+    if (JOB_CHAT_MODAL_OPEN) renderJobChatPreview();
     renderJobChatPanel();
   }
 }
