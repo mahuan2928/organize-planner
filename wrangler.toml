@@ -1,0 +1,22 @@
+name = "organize-planner"
+main = "worker/src/index.js"
+compatibility_date = "2026-07-01"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = true
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "1b828a3d961542018ae64f9f39af8fdc"
+
+[vars]
+LARK_DOMAIN = "https://lark-japan.jp.larksuite.com"
+TENANT_NAME_FALLBACK = "Lark Japan"
+T_DEPT  = "tblPuVcIuc9HApcs"
+T_MEM   = "tblGh22GnWvwYInk"
+T_PLAN  = "tblQbEznhtba1qlT"
+T_OP    = "tblj8R8wQ87UdHag"
+T_AUDIT = "tblmgQeM1ryWTQSb"
+T_CSV   = "tblef15Ay8BqI5pq"
