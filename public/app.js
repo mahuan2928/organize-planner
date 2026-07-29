@@ -1216,6 +1216,7 @@ let JOB_CHAT_FILTER = localStorage.getItem('orgplanner_job_chat_filter') || '店
 let JOB_CHAT_BUSY = false;
 let JOB_CHAT_RESULT = null;
 let JOB_CHAT_MODAL_OPEN = false;
+let JOB_CHAT_SELECTED = null;
 const byOrder = (a, b) => (a.order != null ? a.order : Infinity) - (b.order != null ? b.order : Infinity);
 // 部門未設定（どの部門にも所属していない／参照先部門が存在しない）メンバー
 function unassignedMembers() {
@@ -1363,6 +1364,7 @@ function updateJobChatFilter(value) {
   JOB_CHAT_FILTER = value;
   localStorage.setItem('orgplanner_job_chat_filter', JOB_CHAT_FILTER);
   JOB_CHAT_RESULT = null;
+  JOB_CHAT_SELECTED = null;
   const nameInput = $('jobChatName');
   if (nameInput && !nameInput.dataset.touched) nameInput.value = `${String(JOB_CHAT_FILTER || '役職').trim()} Chat Group`;
   renderJobChatPreview();
@@ -1373,29 +1375,38 @@ function renderJobChatPreview() {
   const members = jobChatMembers();
   const withOpen = members.filter(m => m.openId);
   const missing = members.filter(m => !m.openId);
+  if (!JOB_CHAT_SELECTED) JOB_CHAT_SELECTED = new Set(withOpen.map(m => m.id));
+  const selected = withOpen.filter(m => JOB_CHAT_SELECTED.has(m.id));
   preview.innerHTML = `
     <div class="jc-meta">
       <span class="jc-count">${members.length}名</span>
       <span>招待可能 ${withOpen.length}名</span>
+      <span>選択中 ${selected.length}名</span>
       ${missing.length ? `<span class="jc-warn">open_id なし ${missing.length}名は招待対象外</span>` : '<span>全員招待可能</span>'}
     </div>
     <div class="jc-list">
-      ${members.slice(0, 12).map(m => `<button class="jc-member" data-detail="${m.id}" type="button">
+      ${members.map(m => `<div class="jc-member">
+        <label class="jc-select"><input type="checkbox" data-select-member="${m.id}" ${m.openId && JOB_CHAT_SELECTED.has(m.id) ? 'checked' : ''} ${m.openId ? '' : 'disabled'}></label>
         <span class="jc-av">${esc(initials(m.name))}</span>
-        <span class="jc-main"><b>${esc(m.name)}</b><small>${esc([m.title || '役職なし', memberDeptNames(m).join('、') || '部門未設定'].join(' ・ '))}</small></span>
+        <button class="jc-main" data-detail="${m.id}" type="button"><b>${esc(m.name)}</b><small>${esc([m.title || '役職なし', memberDeptNames(m).join('、') || '部門未設定'].join(' ・ '))}</small></button>
         ${m.openId ? '<span class="jc-ok">招待可</span>' : '<span class="jc-miss">IDなし</span>'}
-      </button>`).join('')}
-      ${members.length > 12 ? `<div class="jc-more">ほか ${members.length - 12} 名</div>` : ''}
+      </div>`).join('')}
       ${!members.length ? '<div class="jc-empty">該当するメンバーがいません。役職名を変更してください。</div>' : ''}
     </div>
     ${JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${esc(JOB_CHAT_RESULT.message)}</div>` : ''}`;
   const btn = $('jobChatCreate');
-  if (btn) btn.disabled = !withOpen.length || JOB_CHAT_BUSY;
+  if (btn) btn.disabled = !selected.length || JOB_CHAT_BUSY;
+  preview.querySelectorAll('[data-select-member]').forEach(input => input.onchange = () => {
+    if (!JOB_CHAT_SELECTED) JOB_CHAT_SELECTED = new Set();
+    if (input.checked) JOB_CHAT_SELECTED.add(input.dataset.selectMember);
+    else JOB_CHAT_SELECTED.delete(input.dataset.selectMember);
+    renderJobChatPreview();
+  });
   preview.querySelectorAll('[data-detail]').forEach(b => b.onclick = () => showDetail('member', b.dataset.detail));
 }
 async function createJobChatGroup() {
   const members = jobChatMembers();
-  const withOpen = members.filter(m => m.openId);
+  const withOpen = members.filter(m => m.openId && (!JOB_CHAT_SELECTED || JOB_CHAT_SELECTED.has(m.id)));
   const name = ($('jobChatName') && $('jobChatName').value.trim()) || `${String(JOB_CHAT_FILTER || '役職').trim()} Chat Group`;
   if (!withOpen.length) { showToast('招待できるメンバーがいません。'); return; }
   openConfirm({
@@ -1413,6 +1424,7 @@ async function doCreateJobChatGroup(name, withOpen) {
     const r = await postJSON('/api/chatgroups/create', {
       title: name,
       memberOpenIds: withOpen.map(m => m.openId),
+      members: withOpen.map(m => ({ openId: m.openId, email: m.email, name: m.name })),
       source: { filterField: 'title', filterValue: JOB_CHAT_FILTER }
     });
     if (!r.ok) throw new Error(r.error || 'Chat Group 作成に失敗しました');

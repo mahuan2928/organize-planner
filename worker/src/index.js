@@ -152,16 +152,29 @@ export default {
         if (path === '/api/chatgroups/create' && req.method === 'POST') {
           const title = String((body && body.title) || '').trim();
           const memberOpenIds = Array.isArray(body && body.memberOpenIds) ? body.memberOpenIds : [];
-          const ids = [...new Set([...memberOpenIds, s.openId].map(x => String(x || '').trim()).filter(Boolean))];
+          const members = Array.isArray(body && body.members) ? body.members : [];
+          const emails = members.map(m => String((m && m.email) || '').trim()).filter(Boolean);
+          const emailOpenIds = await lark.batchGetOpenIdsByEmail(env, emails).catch(() => ({}));
+          const resolved = members.map(m => {
+            const email = String((m && m.email) || '').trim();
+            return emailOpenIds[email] || '';
+          }).filter(Boolean);
+          // Base 台帳の open_id は別 App 由来の場合があるため、email で現在 App の open_id に引き直す。
+          // email が無いメンバーだけ従来値にフォールバックする。
+          const fallback = members.filter(m => !String((m && m.email) || '').trim()).map(m => m && m.openId).filter(Boolean);
+          const ids = [...new Set([...resolved, ...fallback, s.openId].map(x => String(x || '').trim()).filter(Boolean))];
           if (!title) return json({ ok: false, error: 'グループ名を入力してください' }, 400);
-          if (!memberOpenIds.length) return json({ ok: false, error: '追加するメンバーがありません' }, 400);
+          if (!memberOpenIds.length && !members.length) return json({ ok: false, error: '追加するメンバーがありません' }, 400);
+          if (!resolved.length && emails.length) {
+            return json({ ok: false, error: '選択メンバーの open_id を現在の App 用に変換できませんでした。メールアドレスと Contact 権限を確認してください。' }, 400);
+          }
           if (ids.length > 500) return json({ ok: false, error: 'メンバー数が多すぎます。500名以下に絞り込んでください' }, 400);
           const result = await lark.createChat(env, {
             name: title,
             description: `組織プランナーで作成: ${s.name || s.openId}`,
             openIds: ids
           });
-          return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, operatorIncluded: true });
+          return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, resolvedCount: resolved.length, operatorIncluded: true });
         }
         if (path === '/api/execute' && req.method === 'POST') {
           // 誰が実行したかをサービス層の監査ログへ渡す

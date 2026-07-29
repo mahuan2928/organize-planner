@@ -54,6 +54,26 @@ export async function contact(env, method, path, opts) {
   return larkFetch(await tenantToken(env), method, path, opts);
 }
 
+export async function batchGetOpenIdsByEmail(env, emails) {
+  const uniq = [...new Set((emails || []).map(x => String(x || '').trim()).filter(Boolean))];
+  const out = {};
+  const token = await tenantToken(env);
+  for (let i = 0; i < uniq.length; i += 50) {
+    const chunk = uniq.slice(i, i + 50);
+    const j = await larkFetch(token, 'POST', '/open-apis/contact/v3/users/batch_get_id', {
+      params: { user_id_type: 'open_id' },
+      body: { emails: chunk }
+    });
+    const list = (j.data && (j.data.user_list || j.data.users)) || [];
+    list.forEach(u => {
+      const email = String(u.email || '').trim();
+      const id = u.user_id || u.open_id;
+      if (email && id) out[email] = id;
+    });
+  }
+  return out;
+}
+
 // ---------------- IM: bot 資格でグループチャット作成 ----------------
 export async function createChat(env, { name, description, openIds }) {
   const ids = [...new Set((openIds || []).filter(Boolean))];
