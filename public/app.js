@@ -90,6 +90,7 @@ async function load() {
     render(); attachDnD(); renderDiff(); closeDrawer();
     $('skeleton').hidden = true;
     $('chart').style.visibility = '';
+    scheduleOnboarding();
   } catch (e) {
     $('skeleton').hidden = true;
     $('syncDot').className = 'sync-dot ng';
@@ -121,6 +122,145 @@ async function showSession() {
     el.hidden = false;
     el.querySelector('.si-name').textContent = d.name || '';
   } catch (_) { /* ローカル開発時は何もしない */ }
+}
+
+// ---- 新手ガイド（初回だけ自動表示・右上の「ガイド」から再表示）----
+const OB_KEY = 'orgplanner_onboarding_seen_v1';
+let onboardingStep = 0;
+let onboardingAutoQueued = false;
+let onboardingResize = null;
+const ONBOARDING_STEPS = [
+  {
+    title: '組織プランナーへようこそ',
+    body: '現在の組織を確認しながら、改編案を安全に作成できます。\nドラッグ操作で下書きを作り、変更内容を確認してから Lark に反映します。',
+    safe: '実行するまで、Lark 側の正式な組織は変更されません。'
+  },
+  {
+    selector: '.toolbar',
+    title: '表示と操作を切り替える',
+    body: '組織図・一覧・部門ボードの表示を切り替えられます。\n検索や表示密度を使うと、確認したい部門やメンバーにすばやく移動できます。'
+  },
+  {
+    selector: '#chartWrap',
+    title: '組織を俯瞰する',
+    body: '中央のキャンバスで部門とメンバーの関係を確認します。\n部門やメンバーをドラッグすると、異動・配属変更の下書きを作成できます。'
+  },
+  {
+    selector: '#sidePanel',
+    title: '変更内容を確認する',
+    body: '右側のパネルには、作成した下書きの差分とリスクが表示されます。\n実行前に、対象部門・対象メンバー・削除の有無を確認してください。'
+  },
+  {
+    selector: '#actionMain',
+    title: '予約プランを作成して確定する',
+    body: '変更があると、右上の主ボタンから予約プランを作成できます。\n予約を確定するまでは Lark に反映されません。'
+  }
+];
+
+function initOnboarding() {
+  const btn = $('guideBtn');
+  if (btn) btn.onclick = () => startOnboarding(true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.querySelector('.ob-layer')) closeOnboarding(false);
+  });
+}
+function scheduleOnboarding() {
+  if (onboardingAutoQueued || localStorage.getItem(OB_KEY) === '1') return;
+  onboardingAutoQueued = true;
+  setTimeout(() => startOnboarding(false), 650);
+}
+function startOnboarding(manual) {
+  if (!manual && localStorage.getItem(OB_KEY) === '1') return;
+  onboardingStep = 0;
+  renderOnboarding();
+}
+function closeOnboarding(markSeen) {
+  const layer = document.querySelector('.ob-layer');
+  if (layer) layer.remove();
+  if (markSeen) localStorage.setItem(OB_KEY, '1');
+  if (onboardingResize) window.removeEventListener('resize', onboardingResize);
+  onboardingResize = null;
+}
+function visibleRect(selector) {
+  if (!selector) return null;
+  const el = document.querySelector(selector);
+  if (!el || el.hidden || el.getClientRects().length === 0) return null;
+  const r = el.getBoundingClientRect();
+  if (r.width < 4 || r.height < 4) return null;
+  el.scrollIntoView && el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  return el.getBoundingClientRect();
+}
+function renderOnboarding() {
+  const step = ONBOARDING_STEPS[onboardingStep];
+  if (!step) { closeOnboarding(true); return; }
+  const rect = visibleRect(step.selector);
+  if (step.selector && !rect) {
+    onboardingStep += 1;
+    renderOnboarding();
+    return;
+  }
+  closeOnboarding(false);
+  const layer = document.createElement('div');
+  layer.className = 'ob-layer';
+  const dots = ONBOARDING_STEPS.map((_, i) => `<span class="ob-dot ${i === onboardingStep ? 'on' : ''}"></span>`).join('');
+  layer.innerHTML = `
+    <div class="ob-backdrop"></div>
+    <div class="ob-highlight" aria-hidden="true"></div>
+    <section class="ob-card" role="dialog" aria-modal="true" aria-labelledby="ob-title">
+      <div class="ob-kicker">はじめてガイド ${onboardingStep + 1} / ${ONBOARDING_STEPS.length}</div>
+      <div id="ob-title" class="ob-title">${esc(step.title)}</div>
+      <div class="ob-body">${esc(step.body)}</div>
+      ${step.safe ? `<div class="ob-safe">${esc(step.safe)}</div>` : ''}
+      <div class="ob-footer">
+        <div class="ob-progress" aria-hidden="true">${dots}</div>
+        <div class="ob-actions">
+          ${onboardingStep > 0 ? '<button class="ob-prev" type="button">戻る</button>' : ''}
+          <button class="ob-skip" type="button">スキップ</button>
+          <button class="ob-next" type="button">${onboardingStep === ONBOARDING_STEPS.length - 1 ? '完了' : '次へ'}</button>
+        </div>
+      </div>
+    </section>`;
+  document.body.appendChild(layer);
+  positionOnboarding(rect);
+  const prev = layer.querySelector('.ob-prev');
+  if (prev) prev.onclick = () => { onboardingStep -= 1; renderOnboarding(); };
+  layer.querySelector('.ob-skip').onclick = () => closeOnboarding(true);
+  layer.querySelector('.ob-next').onclick = () => {
+    onboardingStep += 1;
+    if (onboardingStep >= ONBOARDING_STEPS.length) closeOnboarding(true);
+    else renderOnboarding();
+  };
+  onboardingResize = () => positionOnboarding(visibleRect(step.selector));
+  window.addEventListener('resize', onboardingResize);
+  layer.querySelector('.ob-next').focus();
+}
+function positionOnboarding(rect) {
+  const layer = document.querySelector('.ob-layer');
+  if (!layer) return;
+  const hi = layer.querySelector('.ob-highlight');
+  const card = layer.querySelector('.ob-card');
+  const margin = 16;
+  if (!rect) {
+    hi.hidden = true;
+    card.style.left = `${Math.max(margin, (window.innerWidth - card.offsetWidth) / 2)}px`;
+    card.style.top = `${Math.max(margin, (window.innerHeight - card.offsetHeight) / 2)}px`;
+    return;
+  }
+  hi.hidden = false;
+  hi.style.left = `${Math.max(8, rect.left - 6)}px`;
+  hi.style.top = `${Math.max(8, rect.top - 6)}px`;
+  hi.style.width = `${rect.width + 12}px`;
+  hi.style.height = `${rect.height + 12}px`;
+  const cardW = card.offsetWidth || 336;
+  const cardH = card.offsetHeight || 220;
+  let left = rect.right + 16;
+  if (left + cardW + margin > window.innerWidth) left = rect.left - cardW - 16;
+  if (left < margin) left = Math.min(window.innerWidth - cardW - margin, margin);
+  let top = rect.top;
+  if (top + cardH + margin > window.innerHeight) top = window.innerHeight - cardH - margin;
+  if (top < margin) top = margin;
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
 }
 
 function buildFlat(d) {
@@ -2819,3 +2959,4 @@ $('csv-file').addEventListener('change', async (e) => {
 load();
 loadEmpTypes();   // 雇用形態 enum を先読み（メンバー追加モーダルを開く前にセレクトを用意）
 showSession();    // 本番: ログイン中のユーザー名とログアウトを表示
+initOnboarding();
