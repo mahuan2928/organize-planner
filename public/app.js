@@ -1212,6 +1212,9 @@ function renderStartPanel(q) {
 let VIEW = 'chart';           // chart | outline | board
 let ALT_Q = '';               // 一覧/ボードの絞り込み文字列
 const ALT_EXPANDED = new Set();
+let JOB_CHAT_FILTER = localStorage.getItem('orgplanner_job_chat_filter') || '店長';
+let JOB_CHAT_BUSY = false;
+let JOB_CHAT_RESULT = null;
 const byOrder = (a, b) => (a.order != null ? a.order : Infinity) - (b.order != null ? b.order : Infinity);
 // 部門未設定（どの部門にも所属していない／参照先部門が存在しない）メンバー
 function unassignedMembers() {
@@ -1252,7 +1255,7 @@ function renderAltView() {
     `<div class="alt-bar">
        <input id="alt-search" class="alt-search" type="text" placeholder="部門・メンバーで絞り込み…" autocomplete="off">
        <span id="alt-tools" class="alt-tools"></span>
-     </div><div id="alt-body" class="alt-body"></div>`;
+     </div>${VIEW === 'outline' ? '<div id="job-chat-panel"></div>' : ''}<div id="alt-body" class="alt-body"></div>`;
   const s = $('alt-search'); s.value = ALT_Q;
   s.oninput = (e) => { ALT_Q = e.target.value.trim().toLowerCase(); renderAltBody(); };
   // ツールは一度だけ（一覧のみ 展開/折りたたみ）
@@ -1266,7 +1269,102 @@ function renderAltView() {
 function renderAltBody() {
   const body = $('alt-body'); if (!body) return;
   recountDepts();   // HEADCOUNT（部門人数）を最新化（一覧/ボードでもカードと同じ数字にする）
+  renderJobChatPanel();
   body.innerHTML = VIEW === 'outline' ? outlineListHTML() : boardHTML();
+}
+function memberDeptNames(m) {
+  return [...(m.deptIds || [])].map(deptNameById).filter(Boolean);
+}
+function jobChatMembers() {
+  const q = String(JOB_CHAT_FILTER || '').trim().toLowerCase();
+  if (!q) return [];
+  return [...MEMBERS.values()]
+    .filter(m => memberInVisibleDept(m) && !memberStatusShort(m).resigned && String(m.title || '').toLowerCase().includes(q))
+    .sort((a, b) => String(a.name).localeCompare(b.name, 'ja'));
+}
+function renderJobChatPanel() {
+  const panel = $('job-chat-panel');
+  if (!panel || VIEW !== 'outline') return;
+  const members = jobChatMembers();
+  const withOpen = members.filter(m => m.openId);
+  const missing = members.filter(m => !m.openId);
+  const defaultName = `${String(JOB_CHAT_FILTER || '役職').trim()}連絡グループ`;
+  const result = JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${esc(JOB_CHAT_RESULT.message)}</div>` : '';
+  panel.innerHTML = `
+    <section class="job-chat-card">
+      <div class="jc-head">
+        <div>
+          <div class="jc-kicker">役職からグループ作成</div>
+          <div class="jc-title">同じ役職のメンバーを Lark グループに招待</div>
+        </div>
+        <span class="jc-count">${members.length}名</span>
+      </div>
+      <div class="jc-controls">
+        <label class="jc-field"><span>役職フィルター</span><input id="jobChatFilter" type="text" value="${esc(JOB_CHAT_FILTER)}" placeholder="例: 店長"></label>
+        <label class="jc-field jc-name"><span>グループ名</span><input id="jobChatName" type="text" value="${esc(defaultName)}" placeholder="グループ名"></label>
+        <button id="jobChatCreate" class="jc-create" type="button" ${!withOpen.length || JOB_CHAT_BUSY ? 'disabled' : ''}>このメンバーで作成</button>
+      </div>
+      <div class="jc-meta">
+        <span>招待可能 ${withOpen.length}名</span>
+        ${missing.length ? `<span class="jc-warn">open_id なし ${missing.length}名は招待対象外</span>` : '<span>全員招待可能</span>'}
+      </div>
+      <div class="jc-list">
+        ${members.slice(0, 12).map(m => `<button class="jc-member" data-detail="${m.id}" type="button">
+          <span class="jc-av">${esc(initials(m.name))}</span>
+          <span class="jc-main"><b>${esc(m.name)}</b><small>${esc([m.title || '役職なし', memberDeptNames(m).join('、') || '部門未設定'].join(' ・ '))}</small></span>
+          ${m.openId ? '<span class="jc-ok">招待可</span>' : '<span class="jc-miss">IDなし</span>'}
+        </button>`).join('')}
+        ${members.length > 12 ? `<div class="jc-more">ほか ${members.length - 12} 名</div>` : ''}
+        ${!members.length ? '<div class="jc-empty">該当するメンバーがいません。役職名を変更してください。</div>' : ''}
+      </div>
+      ${result}
+    </section>`;
+  const input = $('jobChatFilter');
+  if (input) input.oninput = (e) => {
+    JOB_CHAT_FILTER = e.target.value;
+    localStorage.setItem('orgplanner_job_chat_filter', JOB_CHAT_FILTER);
+    JOB_CHAT_RESULT = null;
+    renderJobChatPanel();
+    const next = $('jobChatFilter');
+    if (next) {
+      next.focus();
+      next.setSelectionRange(next.value.length, next.value.length);
+    }
+  };
+  const btn = $('jobChatCreate');
+  if (btn) btn.onclick = () => createJobChatGroup();
+  panel.querySelectorAll('[data-detail]').forEach(b => b.onclick = () => showDetail('member', b.dataset.detail));
+}
+async function createJobChatGroup() {
+  const members = jobChatMembers();
+  const withOpen = members.filter(m => m.openId);
+  const name = ($('jobChatName') && $('jobChatName').value.trim()) || `${String(JOB_CHAT_FILTER || '役職').trim()}連絡グループ`;
+  if (!withOpen.length) { showToast('招待できるメンバーがいません。'); return; }
+  openConfirm({
+    title: 'Lark グループを作成しますか？',
+    body: `<div class="cfm-lead">「${esc(name)}」を作成し、${withOpen.length}名を招待します。</div>
+      <div class="cfm-meta">現在ログイン中の管理者も参加者に含まれます。</div>`,
+    okLabel: '作成する',
+    okClass: 'act-primary',
+    onOk: () => doCreateJobChatGroup(name, withOpen)
+  });
+}
+async function doCreateJobChatGroup(name, withOpen) {
+  JOB_CHAT_BUSY = true; JOB_CHAT_RESULT = null; renderJobChatPanel();
+  try {
+    const r = await postJSON('/api/chatgroups/create', {
+      title: name,
+      memberOpenIds: withOpen.map(m => m.openId),
+      source: { filterField: 'title', filterValue: JOB_CHAT_FILTER }
+    });
+    if (!r.ok) throw new Error(r.error || 'グループ作成に失敗しました');
+    JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名` };
+    showToast('Lark グループを作成しました。');
+  } catch (e) {
+    JOB_CHAT_RESULT = { ok: false, message: `作成できませんでした: ${String((e && e.message) || e)}` };
+  } finally {
+    JOB_CHAT_BUSY = false; renderJobChatPanel();
+  }
 }
 // ---- 一覧（アウトライン）: カラーアバター＋責任者チップ＋人数バッジ＋階層ガイド線 ----
 const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';

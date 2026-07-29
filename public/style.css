@@ -1051,6 +1051,51 @@ body {
 .alt-btn { font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; }
 .alt-btn:hover { background: var(--surface-2); }
 .alt-body { padding: 10px 16px 28px; }
+.job-chat-card {
+  max-width: 840px; margin: 12px auto 0; padding: 14px;
+  border: 1px solid #D6E4FD; border-radius: 16px; background: var(--primary-soft);
+}
+.jc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.jc-kicker { font-size: 11px; color: var(--primary); font-weight: 750; letter-spacing: .04em; }
+.jc-title { margin-top: 3px; font-size: 14px; font-weight: 750; color: var(--ink); }
+.jc-count { flex: none; padding: 4px 9px; border-radius: 999px; background: #fff; color: var(--primary); font-size: 12px; font-weight: 750; border: 1px solid #D6E4FD; }
+.jc-controls { display: grid; grid-template-columns: minmax(140px, 190px) 1fr auto; gap: 10px; align-items: end; }
+.jc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.jc-field span { font-size: 11px; font-weight: 700; color: var(--ink-3); }
+.jc-field input {
+  height: 34px; box-sizing: border-box; border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); background: #fff; padding: 0 10px; font: inherit; font-size: 13px;
+}
+.jc-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.jc-create {
+  height: 34px; padding: 0 14px; border-radius: var(--r-md); border: 1px solid var(--primary);
+  background: var(--primary); color: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.jc-create:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.jc-create:disabled { opacity: .5; cursor: not-allowed; }
+.jc-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; color: var(--ink-3); font-size: 11.5px; }
+.jc-warn { color: var(--warning); }
+.jc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; }
+.jc-member {
+  display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px;
+  border: 1px solid var(--line); border-radius: 12px; background: #fff; text-align: left; cursor: pointer; font: inherit;
+}
+.jc-member:hover { border-color: #D6E4FD; background: #F9FBFF; }
+.jc-av { flex: none; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--primary-soft); color: var(--primary); font-size: 11px; font-weight: 800; }
+.jc-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.jc-main b { font-size: 12.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jc-main small { font-size: 10.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jc-ok, .jc-miss { flex: none; font-size: 10px; font-weight: 750; padding: 2px 6px; border-radius: 999px; }
+.jc-ok { color: var(--success); background: var(--success-bg); border: 1px solid var(--success-line); }
+.jc-miss { color: var(--warning); background: var(--warning-bg); border: 1px solid var(--warning-line); }
+.jc-more, .jc-empty { grid-column: 1 / -1; padding: 10px; text-align: center; color: var(--ink-3); font-size: 12px; }
+.jc-result { margin-top: 10px; padding: 9px 10px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
+.jc-result.ok { color: var(--success); background: var(--success-bg); border: 1px solid var(--success-line); }
+.jc-result.ng { color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-line); }
+@media (max-width: 760px) {
+  .jc-controls { grid-template-columns: 1fr; }
+  .jc-create { width: 100%; }
+}
 /* アウトライン（一覧）: カラーアバター＋責任者チップ＋人数バッジ＋階層ガイド線 */
 .olx-list { max-width: 840px; margin: 0 auto; }
 .olx-drow { display: flex; align-items: center; gap: 9px; padding: 6px 10px; border-radius: 9px; }

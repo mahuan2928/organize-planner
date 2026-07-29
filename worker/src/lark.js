@@ -54,6 +54,27 @@ export async function contact(env, method, path, opts) {
   return larkFetch(await tenantToken(env), method, path, opts);
 }
 
+// ---------------- IM: bot 資格でグループチャット作成 ----------------
+export async function createChat(env, { name, description, openIds }) {
+  const ids = [...new Set((openIds || []).filter(Boolean))];
+  const j = await larkFetch(await tenantToken(env), 'POST', '/open-apis/im/v1/chats', {
+    params: { user_id_type: 'open_id' },
+    body: {
+      name,
+      description: description || '',
+      chat_mode: 'group',
+      chat_type: 'private',
+      user_id_list: ids
+    }
+  });
+  const data = j.data || {};
+  return {
+    chatId: data.chat_id || data.open_chat_id || '',
+    name: data.name || name,
+    raw: data
+  };
+}
+
 // ---------------- Base 台帳: user_access_token（実行者の資格）----------------
 // 実測で確定したエンドポイント群（bitable/v1 ではなく base/v3 を使う）
 const basePath = (env, table, suffix = '') =>

@@ -149,6 +149,20 @@ export default {
         }
         if (path === '/api/plan' && req.method === 'POST') return json(await svc.savePlan(body));
         if (path === '/api/csv-import' && req.method === 'POST') return json(await svc.csvImport(body));
+        if (path === '/api/chatgroups/create' && req.method === 'POST') {
+          const title = String((body && body.title) || '').trim();
+          const memberOpenIds = Array.isArray(body && body.memberOpenIds) ? body.memberOpenIds : [];
+          const ids = [...new Set([...memberOpenIds, s.openId].map(x => String(x || '').trim()).filter(Boolean))];
+          if (!title) return json({ ok: false, error: 'グループ名を入力してください' }, 400);
+          if (!memberOpenIds.length) return json({ ok: false, error: '追加するメンバーがありません' }, 400);
+          if (ids.length > 500) return json({ ok: false, error: 'メンバー数が多すぎます。500名以下に絞り込んでください' }, 400);
+          const result = await lark.createChat(env, {
+            name: title,
+            description: `組織プランナーで作成: ${s.name || s.openId}`,
+            openIds: ids
+          });
+          return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, operatorIncluded: true });
+        }
         if (path === '/api/execute' && req.method === 'POST') {
           // 誰が実行したかをサービス層の監査ログへ渡す
           const r = await svc.execute({ ...body, __actor: `${s.name}（${s.openId}）` });

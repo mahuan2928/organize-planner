@@ -540,6 +540,13 @@ app.post('/api/csv-import', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
 });
 
+app.post('/api/chatgroups/create', async (_req, res) => {
+  res.status(501).json({
+    ok: false,
+    error: 'ローカル開発サーバーではグループ作成に対応していません。本番 Worker でお試しください。'
+  });
+});
+
 // セットアップ状態（config が揃っているか）: フロントの初回セットアップ画面判定用
 app.get('/api/setup/status', (req, res) => {
   res.json({ ok: true, configured: isConfigured(), profile: (CFG && CFG.profile) || null, domain: (CFG && CFG.domain) || null, baseUrl: BASE ? baseUrl() : null });
