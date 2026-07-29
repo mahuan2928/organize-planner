@@ -1177,7 +1177,8 @@ body {
   pointer-events: none; transition: left .16s ease, top .16s ease, width .16s ease, height .16s ease;
 }
 .ob-card {
-  position: fixed; width: 372px; max-width: calc(100vw - 32px); padding: 18px;
+  position: fixed; width: 372px; max-width: calc(100vw - 32px); max-height: calc(100vh - 32px);
+  overflow-y: auto; padding: 18px;
   border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
   box-shadow: var(--sh-lg); pointer-events: auto;
 }
@@ -1185,16 +1186,16 @@ body {
 .ob-title { font-size: 17px; line-height: 1.35; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
 .ob-body { font-size: 13px; line-height: 1.7; color: var(--ink-2); white-space: pre-line; }
 .ob-tasklist {
-  list-style: none; counter-reset: obtask; display: flex; flex-direction: column; gap: 8px;
-  margin: 12px 0 0; padding: 0;
+  list-style: none; counter-reset: obtask; display: flex; flex-direction: column; gap: 6px;
+  margin: 10px 0 0; padding: 0;
 }
 .ob-tasklist li {
   counter-increment: obtask; display: flex; align-items: flex-start; gap: 8px;
-  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
-  background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; line-height: 1.45;
+  padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--surface-2); color: var(--ink-2); font-size: 12px; line-height: 1.35;
 }
 .ob-tasklist li::before {
-  content: counter(obtask); flex: none; width: 18px; height: 18px; border-radius: 999px;
+  content: counter(obtask); flex: none; width: 17px; height: 17px; border-radius: 999px;
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--primary-soft); color: var(--primary); font-size: 10.5px; font-weight: 800;
 }
@@ -1203,7 +1204,7 @@ body {
   border: 1px solid #D6E4FD; background: var(--primary-soft);
   color: var(--ink-2); font-size: 12.5px; line-height: 1.55;
 }
-.ob-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.ob-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
 .ob-progress { display: flex; align-items: center; gap: 5px; color: var(--ink-3); font-size: 12px; }
 .ob-dot { width: 6px; height: 6px; border-radius: 999px; background: #D7DCE8; }
 .ob-dot.on { width: 18px; background: var(--primary); }
@@ -1251,7 +1252,10 @@ body {
   }
   .side-panel.open { transform: none; }
   .ob-highlight { display: none; }
-  .ob-card { left: 16px !important; right: 16px; top: 88px !important; width: auto; max-width: none; }
+  .ob-card {
+    left: 16px !important; right: 16px; top: 16px !important;
+    width: auto; max-width: none; max-height: calc(100vh - 32px);
+  }
 }
 
 /* モバイル: ブランド副題（統計・同期）を隠して横あふれを防止（695行の .subtitle 再宣言より後ろに置き上書き問題を回避）*/
