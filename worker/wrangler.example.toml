@@ -15,6 +15,7 @@ binding = "SESSIONS"
 id = "<wrangler kv namespace create oganizer で作成したID>"
 
 [vars]
+LARK_APP_ID = "<Lark App ID。例: cli_xxxxxxxxxxxxxxxx>"
 LARK_DOMAIN = "https://<your-tenant>.jp.larksuite.com"
 TENANT_NAME_FALLBACK = "<組織名>"
 # Base（多維表格）のテーブルID

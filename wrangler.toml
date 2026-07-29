@@ -12,6 +12,7 @@ binding = "SESSIONS"
 id = "1b828a3d961542018ae64f9f39af8fdc"
 
 [vars]
+LARK_APP_ID = "cli_aae3337fc078de13"
 LARK_DOMAIN = "https://lark-japan.jp.larksuite.com"
 TENANT_NAME_FALLBACK = "Lark Japan"
 T_DEPT  = "tblPuVcIuc9HApcs"
