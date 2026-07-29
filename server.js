@@ -206,7 +206,14 @@ app.get('/api/org', async (req, res) => {
       });
     } catch (_) { /* best-effort: 補完失敗でも Base の値で動作 */ }
     res.json({ ok: true, base: baseUrl(), tenantName, stats: { depts: dOut.length, members: mOut.length }, depts: dOut, members: mOut });
-  } catch (e) { res.status(500).json({ ok: false, error: String((e && e.message) || e) }); }
+  } catch (e) {
+    res.status(500).json({
+      ok: false,
+      error: String((e && e.message) || e),
+      code: e && e.code,
+      base: baseUrl()
+    });
+  }
 });
 
 // ================= M4: 計画を Base 台帳に保存 =================

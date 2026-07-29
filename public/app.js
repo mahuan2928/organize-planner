@@ -10,8 +10,9 @@ const ORPHAN_ID = '__orphan__';   // 仮想ノード: 部門未設定（無所�
 let chart = null;
 let BASE_URL = '';   // Base 台帳の URL（サーバー設定から取得。テナント固有値をコードに持たない）
 let COMPACT = true;
-// 表示密度: simple=部門のみ / full=部門+全メンバー（全員が独立ノード）。既定=full
-let DENSITY = localStorage.getItem('orgplanner_density') === 'simple' ? 'simple' : 'full';
+// 表示密度: simple=部門のみ / full=部門+全メンバー（全員が独立ノード）。新規ユーザーは simple で始める
+const SAVED_DENSITY = localStorage.getItem('orgplanner_density');
+let DENSITY = SAVED_DENSITY === 'full' ? 'full' : 'simple';
 let SHOW_REPORTING = false;   // 汇报線（人→人）: 既定は隠し。ONで上長の下にネスト表示（帰属は部門ツリーで担保）
 let SIMPLE = false;           // 旧スタート画面モード（廃止・常に部門ツリー表示）
 let FOCUS = null;             // 任意の集中ドリル（部門サブツリーに絞る）
@@ -66,7 +67,12 @@ async function load() {
     // 本番（Worker）ではログイン必須。未ログイン/期限切れならログイン画面へ誘導する
     if (res.status === 401 && d.needLogin) { location.href = '/auth/login'; return; }
     if (res.status === 403) { showAuthError(d.error || '管理者権限が必要です'); return; }
-    if (!d.ok) throw new Error(d.error || '取得に失敗しました');
+    if (!d.ok) {
+      const err = new Error(d.error || '取得に失敗しました');
+      err.code = d.code;
+      err.base = d.base;
+      throw err;
+    }
     $('baselink').href = d.base;
     BASE_URL = d.base || '';   // 台帳リンクはサーバー設定から受け取る（テナント固有値をコードに埋め込まない）
     $('stats').textContent = `部門 ${d.stats.depts}件 ・ メンバー ${d.stats.members}名`;
@@ -94,12 +100,40 @@ async function load() {
   } catch (e) {
     $('skeleton').hidden = true;
     $('syncDot').className = 'sync-dot ng';
-    $('syncFailMsg').textContent = 'データの取得に失敗しました。時間をおいて再度お試しください。\n詳細: ' + String((e && e.message) || e);
+    renderSyncError(e);
     $('syncFail').hidden = false;
     logHist('同期失敗', String((e && e.message) || e));
   }
 }
 $('retryBtn') && ($('retryBtn').onclick = load);
+
+function apiErrorInfo(e) {
+  const raw = String((e && e.message) || e || '');
+  const code = (e && e.code) || ((raw.match(/Lark\s+(\d+)/) || [])[1]);
+  const base = (e && e.base) || BASE_URL || '';
+  if (String(code) === '91403' || /you don't have permission/i.test(raw)) {
+    return {
+      title: 'Base 台帳へのアクセス権限がありません',
+      body: 'このツールは、ログイン中のユーザー権限で Base 台帳を読み書きします。Base の所有者または管理者に依頼して、協力者として追加してもらってください。',
+      action: base ? { href: base, label: 'Base 台帳を開いて権限申請' } : null,
+      detail: code ? `Lark ${code}: you don't have permission` : raw
+    };
+  }
+  return {
+    title: 'データの取得に失敗しました',
+    body: '時間をおいて再度お試しください。問題が続く場合は管理者にお問い合わせください。',
+    action: null,
+    detail: raw
+  };
+}
+function renderSyncError(e) {
+  const info = apiErrorInfo(e);
+  $('syncFailMsg').innerHTML =
+    `<div class="sf-main">${esc(info.title)}</div>` +
+    `<div class="sf-help">${esc(info.body)}</div>` +
+    (info.action ? `<a class="sf-link" href="${esc(info.action.href)}" target="_blank" rel="noopener">${esc(info.action.label)} ↗</a>` : '') +
+    `<details class="sf-detail"><summary>詳細</summary><div>${esc(info.detail)}</div></details>`;
+}
 
 // 権限エラー（管理者以外）: 再試行しても無駄なので、専用の案内を出す
 function showAuthError(msg) {
@@ -132,28 +166,28 @@ let onboardingResize = null;
 const ONBOARDING_STEPS = [
   {
     title: '組織プランナーへようこそ',
-    body: '現在の組織を確認しながら、改編案を安全に作成できます。\nドラッグ操作で下書きを作り、変更内容を確認してから Lark に反映します。',
+    body: 'このガイドでは、組織変更の基本手順を確認します。\n1. 部門を探す → 2. 構造を確認 → 3. 下書きを作る → 4. 差分を確認 → 5. 予約を確定、の流れです。',
     safe: '実行するまで、Lark 側の正式な組織は変更されません。'
   },
   {
-    selector: '.toolbar',
-    title: '表示と操作を切り替える',
-    body: '組織図・一覧・部門ボードの表示を切り替えられます。\n検索や表示密度を使うと、確認したい部門やメンバーにすばやく移動できます。'
+    selector: '#search',
+    title: '1. 変更したい部門を探す',
+    body: 'まずは検索で対象部門やメンバーを見つけます。\n大きな組織では、全体を眺めるより検索から始めると迷いにくくなります。'
   },
   {
     selector: '#chartWrap',
-    title: '組織を俯瞰する',
-    body: '中央のキャンバスで部門とメンバーの関係を確認します。\n部門やメンバーをドラッグすると、異動・配属変更の下書きを作成できます。'
+    title: '2. 構造を確認して下書きを作る',
+    body: '中央のキャンバスで部門関係を確認します。\n部門やメンバーをドラッグすると、変更は下書きとして保存されます。'
   },
   {
     selector: '#sidePanel',
-    title: '変更内容を確認する',
-    body: '右側のパネルには、作成した下書きの差分とリスクが表示されます。\n実行前に、対象部門・対象メンバー・削除の有無を確認してください。'
+    title: '3. 差分とリスクを確認する',
+    body: '右側のパネルには、下書きの変更内容が表示されます。\n実行前に、対象部門・対象メンバー・削除の有無を確認してください。'
   },
   {
     selector: '#actionMain',
-    title: '予約プランを作成して確定する',
-    body: '変更があると、右上の主ボタンから予約プランを作成できます。\n予約を確定するまでは Lark に反映されません。'
+    title: '4. 予約プランを作成して確定する',
+    body: '変更があると、右上の主ボタンから予約プランを作成できます。\n最後に予約を確定した時点で、初めて Lark に反映されます。'
   }
 ];
 
@@ -163,6 +197,14 @@ function initOnboarding() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && document.querySelector('.ob-layer')) closeOnboarding(false);
   });
+}
+function initReviewEmptyActions() {
+  const search = $('reviewSearch');
+  if (search) search.onclick = () => { showPanel(); switchTab('review'); $('search').focus(); };
+  const fit = $('reviewFit');
+  if (fit) fit.onclick = () => { chart && chart.fit(); };
+  const guide = $('reviewGuide');
+  if (guide) guide.onclick = () => startOnboarding(true);
 }
 function scheduleOnboarding() {
   if (onboardingAutoQueued || localStorage.getItem(OB_KEY) === '1') return;
@@ -2604,6 +2646,7 @@ let NEWSEQ = 1;          // 新規部門の仮ID連番（new|x）
 let NEWMSEQ = 1;         // 新規メンバーの仮ID連番（newm|x）
 
 function csvOpen() {
+  closeMore();
   cancelMove(); closeAddBar(); closeLeaderBar();   // 移動モード・部門追加バーとは同時に使わせない（放置すると適用後に誤クリック確定の恐れ）
   $('csvOverlay').hidden = false; $('csv-paste').focus();
 }
@@ -2960,3 +3003,4 @@ load();
 loadEmpTypes();   // 雇用形態 enum を先読み（メンバー追加モーダルを開く前にセレクトを用意）
 showSession();    // 本番: ログイン中のユーザー名とログアウトを表示
 initOnboarding();
+initReviewEmptyActions();

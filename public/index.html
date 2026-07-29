@@ -51,12 +51,11 @@
         <div id="search-results" class="search-results" hidden></div>
       </div>
       <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか">
-        <button class="dseg" data-density="simple" role="tab">部門のみ</button>
-        <button class="dseg on" data-density="full" role="tab" aria-selected="true">全員</button>
+        <button class="dseg on" data-density="simple" role="tab" aria-selected="true">部門のみ</button>
+        <button class="dseg" data-density="full" role="tab">全員</button>
       </div>
       <label id="reportToggleWrap" class="report-toggle" hidden title="上長（レポートライン）の関係を線で表示します"><input type="checkbox" id="reportToggle"><span>レポートライン</span></label>
       <button id="guideBtn" class="btn btn-guide" type="button">ガイド</button>
-      <button id="csvImport" class="btn">CSVインポート</button>
       <button id="actionMain" class="btn btn-primary" disabled>変更なし</button>
       <div class="more-wrap">
         <button id="moreBtn" class="btn btn-icon" title="その他のメニュー" aria-label="その他のメニュー">⋯</button>
@@ -67,6 +66,7 @@
           <button id="fit" class="mm-item">全体を表示</button>
           <div class="mm-sep"></div>
           <button id="planList" class="mm-item">予約プラン一覧…</button>
+          <button id="csvImport" class="mm-item">CSVインポート…</button>
           <button id="reload" class="mm-item">再読み込み</button>
           <button id="reset" class="mm-item mm-warn" disabled>変更を破棄…</button>
           <div class="mm-sep"></div>
@@ -148,6 +148,11 @@
           <div class="spe-icon ok">✓</div>
           <div class="spe-title">まだ変更はありません</div>
           <div class="spe-sub">部門またはメンバーをドラッグすると、変更内容がここに表示されます。<br>予約プランの作成 → 予約の確定までは、正式な組織には反映されません。</div>
+          <div class="spe-actions">
+            <button id="reviewSearch" class="spe-btn spe-btn-primary" type="button">部門を検索する</button>
+            <button id="reviewFit" class="spe-btn" type="button">全体を表示</button>
+            <button id="reviewGuide" class="spe-btn" type="button">ガイドを見る</button>
+          </div>
         </div>
         <div id="diff-list" class="diff-list"></div>
         <div id="diff-actions" class="diff-actions"></div>

@@ -809,6 +809,15 @@ body {
 .spe-icon.ok { background: var(--success-bg); border-color: var(--success-line); color: var(--success); }
 .spe-title { font-size: 13.5px; font-weight: 700; color: var(--ink-2); }
 .spe-sub { font-size: 11.5px; line-height: 1.7; margin-top: 6px; }
+.spe-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.spe-btn {
+  font: inherit; font-size: 11.5px; font-weight: 650; height: 30px; padding: 0 11px;
+  border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--ink-2); cursor: pointer;
+}
+.spe-btn:hover { background: var(--surface-2); color: var(--ink); }
+.spe-btn-primary { border-color: #D6E4FD; background: var(--primary-soft); color: var(--primary); }
+.spe-btn-primary:hover { border-color: #BFD3FB; background: #E4EDFE; color: var(--primary-hover); }
 
 /* ---- 変更レビュー: サマリー ---- */
 .review-summary { display: flex; flex-direction: column; gap: 10px; }
@@ -901,7 +910,18 @@ body {
 }
 .sf-icon { font-size: 30px; }
 .sf-title { font-size: 15px; font-weight: 750; color: var(--danger); }
-.sf-msg { font-size: 12px; color: var(--ink-2); max-width: 520px; text-align: center; white-space: pre-wrap; margin-bottom: 8px; }
+.sf-msg { font-size: 12px; color: var(--ink-2); max-width: 560px; text-align: center; margin-bottom: 8px; }
+.sf-main { font-size: 13.5px; font-weight: 750; color: var(--ink); margin-bottom: 6px; }
+.sf-help { line-height: 1.7; white-space: normal; }
+.sf-link {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 34px; margin-top: 12px; padding: 0 14px; border-radius: var(--r-md);
+  background: var(--primary); color: #fff; text-decoration: none; font-weight: 700;
+}
+.sf-link:hover { background: var(--primary-hover); color: #fff; }
+.sf-detail { margin-top: 10px; color: var(--ink-3); font-size: 11px; text-align: left; }
+.sf-detail summary { cursor: pointer; text-align: center; }
+.sf-detail div { margin-top: 6px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); word-break: break-word; }
 /* キャンバス左下のズームコントロール */
 .zoom-ctrl {
   position: absolute; left: 16px; bottom: 16px; z-index: 40;

@@ -125,7 +125,14 @@ export function createService(client) {
         });
       } catch (_) { /* best-effort: 補完失敗でも Base の値で動作 */ }
       return __ok({ ok: true, base: baseUrl(), tenantName, stats: { depts: dOut.length, members: mOut.length }, depts: dOut, members: mOut });
-    } catch (e) { throw e; }
+    } catch (e) {
+      return __ok({
+        ok: false,
+        error: String((e && e.message) || e),
+        code: e && e.code,
+        base: baseUrl()
+      });
+    }
   }
 
   async function savePlan(body) {
