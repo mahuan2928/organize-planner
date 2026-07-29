@@ -1,0 +1,13 @@
+{
+  "profile": "lark-intl",
+  "domain": "https://<your-tenant>.jp.larksuite.com",
+  "baseToken": "<Base（多維表格）の app token>",
+  "tables": {
+    "dept": "<部門テーブルID>",
+    "member": "<メンバーテーブルID>",
+    "plan": "<変更計画テーブルID>",
+    "op": "<変更オペレーションテーブルID>",
+    "audit": "<監査ログテーブルID>",
+    "csv": "<CSVインポート履歴テーブルID>"
+  }
+}

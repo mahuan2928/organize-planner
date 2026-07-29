@@ -1,0 +1,15 @@
+# 依存
+node_modules/
+
+# 秘密情報（絶対にコミットしない）
+config.json
+worker/.dev.vars
+worker/.wrangler/
+.claude/settings.local.json
+
+# 生成物・ログ
+*.log
+worker/wrangler.toml.bak
+.DS_Store
+worker/wrangler.toml
+worker/wrangler.toml.local

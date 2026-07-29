@@ -1,0 +1,30 @@
+name = "org-planner"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# 静的ファイル（組織図アプリ本体）はローカルの public/ をそのまま配信
+[assets]
+directory = "../public"
+binding = "ASSETS"
+
+# セッション / state / tenant_access_token キャッシュ
+# 事前に作成が必要:  wrangler kv namespace create SESSIONS
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "<wrangler kv namespace create SESSIONS で作成したID>"
+
+[vars]
+LARK_DOMAIN = "https://<your-tenant>.jp.larksuite.com"
+TENANT_NAME_FALLBACK = "<組織名>"
+# Base（多維表格）のテーブルID
+T_DEPT  = "<部門テーブルID>"
+T_MEM   = "<メンバーテーブルID>"
+T_PLAN  = "<変更計画テーブルID>"
+T_OP    = "<オペレーションテーブルID>"
+T_AUDIT = "<監査ログテーブルID>"
+T_CSV   = "<CSV履歴テーブルID>"
+
+# 秘密情報は wrangler secret で登録（リポジトリには絶対に置かない）
+#   wrangler secret put LARK_APP_ID
+#   wrangler secret put LARK_APP_SECRET
+#   wrangler secret put BASE_TOKEN

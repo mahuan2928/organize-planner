@@ -1,0 +1,15 @@
+{
+  "name": "org-planner-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "組織プランナー for Lark — Cloudflare Workers 本番版（SSO + 管理者限定）",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

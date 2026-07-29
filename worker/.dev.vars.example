@@ -1,0 +1,5 @@
+# ローカル開発用（wrangler dev）。本番は wrangler secret put で登録すること。
+# このファイルをコピーして .dev.vars を作成し、実際の値を入れてください（.dev.vars は .gitignore 済み）
+LARK_APP_ID=cli_xxxxxxxxxxxxxxxx
+LARK_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+BASE_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxx

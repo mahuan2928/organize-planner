@@ -1,0 +1,6 @@
+# 秘密情報（絶対にコミットしない）
+.dev.vars
+.wrangler/
+node_modules/
+dev.log
+wrangler.toml.bak
