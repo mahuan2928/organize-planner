@@ -13,8 +13,9 @@ let COMPACT = true;
 // 表示密度: simple=部門のみ / full=部門+全メンバー（全員が独立ノード）。新規ユーザーは simple で始める
 const SAVED_DENSITY = localStorage.getItem('orgplanner_density');
 let DENSITY = SAVED_DENSITY === 'full' ? 'full' : 'simple';
-let SHOW_REPORTING = false;   // 汇报線（人→人）: 既定は隠し。ONで上長の下にネスト表示（帰属は部門ツリーで担保）
-let HIDE_NOISE_DEPTS = localStorage.getItem('orgplanner_hide_noise_depts') === '1';
+let SHOW_REPORTING = false;   // 汇报線（人→人）: 全員表示では既定ON
+let HIDE_NOISE_DEPTS = false;
+localStorage.removeItem('orgplanner_hide_noise_depts');
 let SIMPLE = false;           // 旧スタート画面モード（廃止・常に部門ツリー表示）
 let FOCUS = null;             // 任意の集中ドリル（部門サブツリーに絞る）
 let NODES = [];              // フラット部門 working data（草稿）
@@ -2733,6 +2734,9 @@ $('layout').onclick = () => { COMPACT = !COMPACT; $('layout').textContent = COMP
 function setDensity(name) {
   if (!['simple', 'full'].includes(name)) return;
   DENSITY = name; localStorage.setItem('orgplanner_density', name);
+  SHOW_REPORTING = name === 'full';
+  const reportToggle = $('reportToggle');
+  if (reportToggle) reportToggle.checked = SHOW_REPORTING;
   document.querySelectorAll('#densitySeg .dseg').forEach(b => { const on = b.dataset.density === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
   $('reportToggleWrap').hidden = !(VIEW === 'chart' && name === 'full');
   render();
@@ -2749,6 +2753,9 @@ $('fb-siblings').onchange = (e) => setFocus(e.target.value);
 $('focusBar').addEventListener('click', (e) => { const c = e.target.closest('.fb-seg[data-focus]'); if (c) setFocus(c.dataset.focus); });
 // 初期密度セグメントの active 反映
 document.querySelectorAll('#densitySeg .dseg').forEach(b => { const on = b.dataset.density === DENSITY; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+SHOW_REPORTING = DENSITY === 'full';
+if ($('reportToggle')) $('reportToggle').checked = SHOW_REPORTING;
+if ($('reportToggleWrap')) $('reportToggleWrap').hidden = !(VIEW === 'chart' && DENSITY === 'full');
 function guardUnsaved(msg, fn) {
   const n = operations().length;
   if (!n) return fn();
