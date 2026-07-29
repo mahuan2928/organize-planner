@@ -180,6 +180,54 @@ export function createService(client) {
     } catch (e) { throw e; }
   }
 
+  async function batchGetOpenIdsByEmail(emails) {
+    const uniq = [...new Set((emails || []).map(x => String(x || '').trim()).filter(Boolean))];
+    const out = {};
+    for (let i = 0; i < uniq.length; i += 50) {
+      const chunk = uniq.slice(i, i + 50);
+      try {
+        const j = await contactCall('POST', '/open-apis/contact/v3/users/batch_get_id',
+          { emails: chunk }, { user_id_type: 'open_id' });
+        const list = (j.data && (j.data.user_list || j.data.users)) || [];
+        list.forEach(u => {
+          const email = String(u.email || '').trim().toLowerCase();
+          const id = u.user_id || u.open_id;
+          if (email && id) out[email] = id;
+        });
+      } catch (_) { /* best-effort: fallback to original open_id */ }
+    }
+    return out;
+  }
+
+  async function buildAppOpenResolver(todo) {
+    const memberRows = await fetchTable(T_MEM).catch(() => []);
+    const recEmail = new Map();
+    const openEmail = new Map();
+    memberRows.forEach(r => {
+      const email = String(r['メールアドレス'] || '').trim().toLowerCase();
+      if (!email) return;
+      if (r.record_id) recEmail.set(r.record_id, email);
+      const oldOpen = String(r['open_id'] || '').trim();
+      if (oldOpen) openEmail.set(oldOpen, email);
+    });
+    const wantedEmails = new Set();
+    (todo || []).forEach(o => {
+      [o.targetRecId, o.newLeaderRecId, o.leaderRecId, o.handoverRecId].forEach(id => {
+        const email = id && recEmail.get(id);
+        if (email) wantedEmails.add(email);
+      });
+      [o.targetOpenId, o.newLeaderOpenId, o.leaderOpenId, o.handoverOpenId, ...(o.addDeputyOpenIds || []), ...(o.removeDeputyOpenIds || [])].forEach(id => {
+        const email = id && openEmail.get(id);
+        if (email) wantedEmails.add(email);
+      });
+    });
+    const emailOpen = await batchGetOpenIdsByEmail([...wantedEmails]);
+    return (oldOpen, recId) => {
+      const email = (recId && recEmail.get(recId)) || (oldOpen && openEmail.get(oldOpen));
+      return (email && emailOpen[email]) || oldOpen;
+    };
+  }
+
   async function execute(body) {
     try {
       const { planRecId, ops, limit, dryRun, __actor } = body;
@@ -205,6 +253,12 @@ export function createService(client) {
       const isTmp = (v) => typeof v === 'string' && (v.startsWith('new|') || v.startsWith('newm|'));
       const rOpen = (v) => isTmp(v) ? (created[v] && created[v].openId) : v;
       const rRec = (v) => isTmp(v) ? (created[v] && created[v].recId) : v;
+      const appOpen = await buildAppOpenResolver(todo);
+      const rMemberOpen = (openId, recId) => {
+        if (!openId) return '';
+        if (isTmp(openId)) return rOpen(openId);
+        return appOpen(openId, recId);
+      };
       for (const o of todo) {
         let ok = false, error = '';
         try {
@@ -238,12 +292,12 @@ export function createService(client) {
             // → アプリが認識しない副（権限範囲外＝アンマップ）は removeDep に載らないため温存される。
             const tgtOpen = rOpen(o.targetOpenId);
             if (isTmp(o.targetOpenId) && !tgtOpen) throw new Error('対象部門（新規）が未作成のため実行できません');
-            const mainOpen = o.newLeaderOpenId ? rOpen(o.newLeaderOpenId) : '';
+            const mainOpen = o.newLeaderOpenId ? rMemberOpen(o.newLeaderOpenId, o.newLeaderRecId) : '';
             if (o.newLeaderOpenId && isTmp(o.newLeaderOpenId) && !mainOpen) throw new Error('責任者（新規メンバー）が未作成のため実行できません');
             let data;
             if (mainOpen) {
-              const addDep = (o.addDeputyOpenIds || []).map(rOpen).filter(Boolean);
-              const removeDep = new Set(o.removeDeputyOpenIds || []);
+              const addDep = (o.addDeputyOpenIds || []).map(id => rMemberOpen(id)).filter(Boolean);
+              const removeDep = new Set((o.removeDeputyOpenIds || []).map(id => rMemberOpen(id)).filter(Boolean));
               let existing = [];
               if (!isTmp(o.targetOpenId)) {   // 新規部門は既存 leaders なし
                 try {
@@ -275,7 +329,7 @@ export function createService(client) {
             if (o.email) data.email = o.email;
             if (o.title) data.job_title = o.title;
             if (o.leaderOpenId) {
-              const lo = rOpen(o.leaderOpenId);
+              const lo = rMemberOpen(o.leaderOpenId, o.leaderRecId);
               if (isTmp(o.leaderOpenId) && !lo) throw new Error('上長（新規メンバー）が未作成のため実行できません');
               data.leader_user_id = lo;
             }
@@ -294,18 +348,20 @@ export function createService(client) {
             const data = {};
             if ('newTitle' in o) data.job_title = o.newTitle;
             if ('newLeaderOpenId' in o) {
-              const lo = rOpen(o.newLeaderOpenId);
+              const lo = rMemberOpen(o.newLeaderOpenId, o.newLeaderRecId);
               if (isTmp(o.newLeaderOpenId) && !lo) throw new Error('上長（新規メンバー）が未作成のため実行できません');
               data.leader_user_id = lo;
             }
-            await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(o.targetOpenId)}`,
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               data, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_UPDATE ${o.targetName}`);
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
             // 主部門の設定。Lark では is_primary_dept は書込不可（派生値）で、department_order が最大の部門が主部門。
             // ユーザーのライブ orders/department_ids を取得し、全部門を保持したまま対象部門の order を最大化（隠れ部門の脱落防止）。
             const primOpen = rOpen(o.primaryDeptOpenId);
             if (isTmp(o.primaryDeptOpenId) && !primOpen) throw new Error('主部門（新規）が未作成のため実行できません');
-            const g = await contactCall('GET', `/open-apis/contact/v3/users/${encodeURIComponent(o.targetOpenId)}`,
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            const g = await contactCall('GET', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               null, { user_id_type: 'open_id', department_id_type: 'open_department_id' });
             const u = (g.data && g.data.user) || {};
             const liveOrders = u.orders || [];
@@ -321,20 +377,21 @@ export function createService(client) {
             liveDeptIds.forEach(did => {
               if (!newOrders.some(x => x.department_id === did)) newOrders.push({ department_id: did, user_order: 0, department_order: did === primOpen ? (maxOrder + 1) : 0 });
             });
-            await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(o.targetOpenId)}`,
+            await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               { department_ids: liveDeptIds, orders: newOrders }, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_SET_PRIMARY ${o.targetName}`);
           } else if (o.opType === 'MEMBER_DELETE') {
             // 資源引継(handover): 引継先が指定されていれば、グループ/ドキュメント/カレンダー/アプリ等を移管してから削除
             let body = null;
             if (o.handoverOpenId) {
-              const h = rOpen(o.handoverOpenId);
+              const h = rMemberOpen(o.handoverOpenId, o.handoverRecId);
               if (h) body = {
                 department_chat_acceptor_user_id: h, external_chat_acceptor_user_id: h,
                 docs_acceptor_user_id: h, calendar_acceptor_user_id: h,
                 application_acceptor_user_id: h, minutes_acceptor_user_id: h, survey_acceptor_user_id: h
               };
             }
-            await sendOrRecord('DELETE', `/open-apis/contact/v3/users/${encodeURIComponent(o.targetOpenId)}`,
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            await sendOrRecord('DELETE', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               body, { user_id_type: 'open_id' }, `MEMBER_DELETE ${o.targetName}`);
           } else {
             // メンバー異動。department_ids は Lark 側で全置換されるため、そのまま toOpenIds を送ると
@@ -350,7 +407,8 @@ export function createService(client) {
             // 異動元はスナップショット既存部門のみ（同一計画内の新規部門になることはない）→ tmp 解決不要
             const fromOpen = (o.fromOpenIds || []).map(rOpen).filter(Boolean);
             const removed = new Set(fromOpen.filter(d => !toSet.has(d)));   // アプリ認識かつ異動先に無い＝今回外す部門
-            const g = await contactCall('GET', `/open-apis/contact/v3/users/${encodeURIComponent(o.targetOpenId)}`,
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            const g = await contactCall('GET', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               null, { user_id_type: 'open_id', department_id_type: 'open_department_id' });
             const u = (g.data && g.data.user) || {};
             const liveDeptIds = u.department_ids || [];
@@ -366,7 +424,7 @@ export function createService(client) {
             newDeptIds.forEach(did => {   // 新規追加した異動先で orders 未掲載のものを補完（保険）
               if (!orders.some(x => x.department_id === did)) orders.push({ department_id: did, user_order: 0, department_order: 0 });
             });
-            await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(o.targetOpenId)}`,
+            await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               { department_ids: newDeptIds, orders }, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_MOVE ${o.targetName}`);
           }
           ok = true; success++;
