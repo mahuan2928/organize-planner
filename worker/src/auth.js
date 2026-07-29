@@ -44,21 +44,37 @@ export async function buildLoginUrl(env, redirectUri) {
   return { url: `${ACCOUNTS}/open-apis/authen/v1/authorize?${q}`, state };
 }
 
+// OAuth v2 は code を「文字列」で返す（成功は "0"）。v1 系は数値 0 なので両方を許容する
+const isOk = (j) => String(j.code ?? '0') === '0' && !j.error;
+
+// 失敗コードを利用者に伝わる日本語へ（公式のエラーコード表に対応）
+const TOKEN_ERRORS = {
+  '20002': 'アプリの認証に失敗しました。App ID / App Secret をご確認ください。',
+  '20003': '認可コードが無効です（一度しか使用できません）。もう一度ログインしてください。',
+  '20004': '認可コードの有効期限が切れました（5分）。もう一度ログインしてください。',
+  '20009': 'このアプリがテナントにインストールされていません。',
+  '20010': 'このアプリを利用する権限がありません。管理者にアプリの可用範囲をご確認ください。',
+  '20024': '認可コードとアプリが一致しません。'
+};
+
 /** 認可コード → user_access_token */
 export async function exchangeCode(env, code, redirectUri) {
   const r = await fetch(`${OPEN}/open-apis/authen/v2/oauth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({
       grant_type: 'authorization_code',
       client_id: env.LARK_APP_ID,
       client_secret: env.LARK_APP_SECRET,
-      code, redirect_uri: redirectUri
+      code, redirect_uri: redirectUri   // 認可時と完全一致させる必要がある（Web アプリでは必須）
     })
   });
   const j = await r.json();
-  if (j.code !== 0 && j.error) throw new Error(`トークン取得失敗: ${j.error} ${j.error_description || ''}`);
-  return j;   // { access_token, refresh_token, expires_in, ... }
+  if (!isOk(j)) {
+    const msg = TOKEN_ERRORS[String(j.code)] || j.error_description || j.error || `コード ${j.code}`;
+    throw new Error(`ログインに失敗しました: ${msg}`);
+  }
+  return j;   // { access_token, expires_in, refresh_token, refresh_token_expires_in, scope, token_type }
 }
 
 /** ログイン中ユーザーの基本情報 */
@@ -67,8 +83,8 @@ export async function fetchUserInfo(userToken) {
     headers: { Authorization: `Bearer ${userToken}` }
   });
   const j = await r.json();
-  if (j.code !== 0) throw new Error(`ユーザー情報の取得に失敗: ${j.code} ${j.msg}`);
-  return j.data;   // { open_id, name, ... }
+  if (!isOk(j)) throw new Error(`ユーザー情報の取得に失敗しました: ${j.msg || j.error_description || j.code}`);
+  return j.data || {};   // { open_id, name, ... }
 }
 
 /** 管理者かどうか（Lark の is_tenant_manager が唯一の根拠） */

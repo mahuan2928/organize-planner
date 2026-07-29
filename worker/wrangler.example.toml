@@ -1,4 +1,4 @@
-name = "org-planner"
+name = "organize-planner"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
@@ -8,10 +8,10 @@ directory = "../public"
 binding = "ASSETS"
 
 # セッション / state / tenant_access_token キャッシュ
-# 事前に作成が必要:  wrangler kv namespace create SESSIONS
+# 事前に作成が必要:  wrangler kv namespace create oganizer
 [[kv_namespaces]]
 binding = "SESSIONS"
-id = "<wrangler kv namespace create SESSIONS で作成したID>"
+id = "<wrangler kv namespace create oganizer で作成したID>"
 
 [vars]
 LARK_DOMAIN = "https://<your-tenant>.jp.larksuite.com"

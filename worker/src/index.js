@@ -15,6 +15,17 @@ const json = (obj, status = 200, headers = {}) =>
 
 const redirect = (loc, headers = {}) => new Response(null, { status: 302, headers: { Location: loc, ...headers } });
 
+/** ログイン失敗を利用者に読める形で返す（JSON を画面に出さない） */
+const htmlError = (title, detail) => new Response(
+  shell(title + ' — 組織プランナー', `
+    <h1 class="err">${escapeHtml(title)}</h1>
+    <p>${escapeHtml(detail)}</p>
+    <a class="btn" href="/auth/login">もう一度ログイン</a>`),
+  { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+
+const escapeHtml = (s) => String(s == null ? '' : s)
+  .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
 /** サービス層に渡すクライアント（Base=ユーザー資格 / Contact=bot 資格） */
 function makeClient(env, userToken) {
   const tables = {
@@ -69,13 +80,24 @@ export default {
       if (path === '/auth/callback') {
         const code = url.searchParams.get('code');
         const state = url.searchParams.get('state');
-        if (!code) return json({ ok: false, error: '認可コードがありません' }, 400);
-        if (!(await stateOk(env, state))) return json({ ok: false, error: '不正なリクエスト（state 不一致）' }, 400);
+        // Lark 側でエラーになった場合はクエリで返ってくる
+        const oauthErr = url.searchParams.get('error');
+        if (oauthErr) return htmlError('ログインできませんでした', url.searchParams.get('error_description') || oauthErr);
+        if (!code) return htmlError('ログインできませんでした', '認可コードが取得できませんでした。もう一度お試しください。');
+        if (!(await stateOk(env, state))) {
+          return htmlError('ログインできませんでした', 'リクエストの検証に失敗しました（時間が経ちすぎた可能性があります）。もう一度ログインしてください。');
+        }
 
-        const tok = await exchangeCode(env, code, redirectUri);
+        let tok, info;
+        try {
+          tok = await exchangeCode(env, code, redirectUri);
+          info = await fetchUserInfo(tok.access_token);
+        } catch (e) {
+          return htmlError('ログインできませんでした', String((e && e.message) || e));
+        }
         const userToken = tok.access_token;
-        const info = await fetchUserInfo(userToken);
         const openId = info.open_id;
+        if (!openId) return htmlError('ログインできませんでした', 'ユーザー情報を取得できませんでした。');
 
         // 管理者以外はここで弾く（セッションを作らない）
         const admin = await isTenantManager(env, openId);
@@ -176,6 +198,6 @@ const loginHtml = () => shell('ログイン — 組織プランナー', `
 
 const denyHtml = (name) => shell('権限がありません — 組織プランナー', `
   <h1 class="err">ご利用いただけません</h1>
-  <p>${name ? name + ' さま：' : ''}このツールは<b>管理者権限をお持ちの方専用</b>です。<br>
+  <p>${name ? escapeHtml(name) + ' さま：' : ''}このツールは<b>管理者権限をお持ちの方専用</b>です。<br>
      権限が必要な場合は、貴社の Lark 管理者にお問い合わせください。</p>
   <a class="btn" href="/auth/logout">別のアカウントでログイン</a>`);

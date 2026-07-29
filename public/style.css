@@ -63,7 +63,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   box-shadow: 0 0 0 3px rgba(255, 255, 255, .35) !important;   /* ダークバー上は白リング */
 }
 
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; height: 100%; overflow: hidden; }  /* 画面外(右)に退避する fixed サイドパネルによる横スクロールを抑止 */
 body {
   background: var(--bg);
   color: var(--ink);

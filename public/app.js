@@ -37,6 +37,18 @@ function logHist(action, detail) {
   renderHist();
 }
 function markEdited() { LAST_EDIT = new Date(); }
+async function readApiJson(res, label) {
+  const text = await res.text();
+  if (!text.trim()) {
+    throw new Error(`${label}: 空のレスポンスです（HTTP ${res.status}）`);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const preview = text.replace(/\s+/g, ' ').slice(0, 160);
+    throw new Error(`${label}: JSON ではないレスポンスです（HTTP ${res.status}）。${preview}`);
+  }
+}
 
 function softColor(hex) {
   const n = parseInt(hex.slice(1), 16);
@@ -50,7 +62,7 @@ async function load() {
   $('chart').style.visibility = 'hidden';
   try {
     const res = await fetch('/api/org');
-    const d = await res.json();
+    const d = await readApiJson(res, '/api/org');
     // 本番（Worker）ではログイン必須。未ログイン/期限切れならログイン画面へ誘導する
     if (res.status === 401 && d.needLogin) { location.href = '/auth/login'; return; }
     if (res.status === 403) { showAuthError(d.error || '管理者権限が必要です'); return; }
