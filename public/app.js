@@ -2607,9 +2607,23 @@ function renderActions() {
   }
 }
 
-// ---- toolbar / more メニュー ----
-const closeMore = () => { $('moreMenu').hidden = true; };
-$('moreBtn').onclick = (e) => { e.stopPropagation(); $('moreMenu').hidden = !$('moreMenu').hidden; };
+// ---- toolbar / domain メニュー ----
+const DOMAIN_MENU_IDS = ['dataMenu', 'planMenu', 'collabMenu'];
+const closeMore = () => { DOMAIN_MENU_IDS.forEach(id => { const el = $(id); if (el) el.hidden = true; }); };
+function toggleDomainMenu(menuId) {
+  const menu = $(menuId);
+  if (!menu) return;
+  const next = menu.hidden;
+  closeMore();
+  menu.hidden = !next;
+}
+function bindDomainMenu(btnId, menuId) {
+  const btn = $(btnId);
+  if (btn) btn.onclick = (e) => { e.stopPropagation(); toggleDomainMenu(menuId); };
+}
+bindDomainMenu('dataMenuBtn', 'dataMenu');
+bindDomainMenu('planMenuBtn', 'planMenu');
+bindDomainMenu('collabMenuBtn', 'collabMenu');
 document.addEventListener('click', (e) => { if (!e.target.closest('.more-wrap')) closeMore(); });
 $('reload').onclick = () => { closeMore(); guardUnsaved('再読み込みすると、未保存の変更は破棄されます。', load); };
 $('reset').onclick = () => {
@@ -2625,6 +2639,21 @@ $('reset').onclick = () => {
 $('expandAll').onclick = () => { closeMore(); NODES.forEach(n => { if (isDisplayDept(n)) EXPANDED.add(n.id); }); render(); };
 $('collapseAll').onclick = () => { closeMore(); EXPANDED.clear(); render(); };
 $('fit').onclick = () => { closeMore(); chart && chart.fit(); };
+$('menuReview').onclick = () => { closeMore(); switchTab('review'); showPanel(); };
+$('menuHistory').onclick = () => { closeMore(); switchTab('hist'); showPanel(); };
+$('menuChatGroup').onclick = () => {
+  closeMore();
+  if (VIEW !== 'outline') {
+    VIEW = 'outline';
+    document.querySelectorAll('#viewSeg .vseg').forEach(b => {
+      const on = b.dataset.view === VIEW;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    render();
+  }
+  setTimeout(openJobChatModal, 0);
+};
 function setNoiseFilter(on) {
   HIDE_NOISE_DEPTS = !!on;
   localStorage.setItem('orgplanner_hide_noise_depts', HIDE_NOISE_DEPTS ? '1' : '0');

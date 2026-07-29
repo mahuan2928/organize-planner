@@ -41,13 +41,18 @@
     </div>
 
     <div class="toolbar">
-      <div class="tb-group tb-view">
-        <span class="tb-label">表示</span>
+      <div class="tb-group tb-view tb-see">
+        <span class="tb-label">見る</span>
         <div id="viewSeg" class="view-seg" role="tablist" aria-label="表示スタイル">
           <button class="vseg on" data-view="chart" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/></svg>組織図</button>
           <button class="vseg" data-view="outline" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>一覧</button>
           <button class="vseg" data-view="board" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>部門ボード</button>
         </div>
+        <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか">
+          <button class="dseg on" data-density="simple" role="tab" aria-selected="true">部門のみ</button>
+          <button class="dseg" data-density="full" role="tab">全員</button>
+        </div>
+        <label id="reportToggleWrap" class="report-toggle" hidden title="上長（レポートライン）の関係を線で表示します"><input type="checkbox" id="reportToggle"><span>レポートライン</span></label>
       </div>
       <div class="tb-group tb-search">
         <span class="tb-label">検索</span>
@@ -56,35 +61,51 @@
           <div id="search-results" class="search-results" hidden></div>
         </div>
       </div>
-      <div class="tb-group tb-density">
-        <span class="tb-label">密度</span>
-        <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか">
-          <button class="dseg on" data-density="simple" role="tab" aria-selected="true">部門のみ</button>
-          <button class="dseg" data-density="full" role="tab">全員</button>
-        </div>
-        <label id="reportToggleWrap" class="report-toggle" hidden title="上長（レポートライン）の関係を線で表示します"><input type="checkbox" id="reportToggle"><span>レポートライン</span></label>
-      </div>
-      <div class="tb-group tb-actions">
-        <span class="tb-label">操作</span>
-        <button id="guideBtn" class="btn btn-guide" type="button">ガイド</button>
-        <button id="actionMain" class="btn btn-primary" disabled>変更なし</button>
+      <div class="tb-group tb-data">
+        <span class="tb-label">データ</span>
         <div class="more-wrap">
-          <button id="moreBtn" class="btn btn-icon" title="その他のメニュー" aria-label="その他のメニュー">⋯</button>
-          <div id="moreMenu" class="more-menu" hidden>
+          <button id="dataMenuBtn" class="btn btn-domain" type="button" aria-label="データメニュー">データ ▾</button>
+          <div id="dataMenu" class="more-menu domain-menu" hidden>
+            <button id="reload" class="mm-item">再読み込み</button>
+            <button id="csvImport" class="mm-item">CSVインポート…</button>
+            <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>
+            <div class="mm-sep"></div>
             <button id="layout" class="mm-item">表示: コンパクト</button>
             <button id="expandAll" class="mm-item">すべて展開</button>
             <button id="collapseAll" class="mm-item">すべて折りたたむ</button>
             <button id="fit" class="mm-item">全体を表示</button>
             <label class="mm-item mm-check"><input id="hideNoiseDepts" type="checkbox"> テスト/デモ部門を隠す</label>
-            <div class="mm-sep"></div>
-            <button id="planList" class="mm-item">予約プラン一覧…</button>
-            <button id="csvImport" class="mm-item">CSVインポート…</button>
-            <button id="reload" class="mm-item">再読み込み</button>
-            <button id="reset" class="mm-item mm-warn" disabled>変更を破棄…</button>
-            <div class="mm-sep"></div>
-            <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>
           </div>
         </div>
+      </div>
+      <div class="tb-group tb-plan">
+        <span class="tb-label">計画</span>
+        <button id="actionMain" class="btn btn-primary" disabled>変更なし</button>
+        <div class="more-wrap">
+          <button id="planMenuBtn" class="btn btn-domain" type="button" aria-label="計画メニュー">計画 ▾</button>
+          <div id="planMenu" class="more-menu domain-menu" hidden>
+            <button id="menuReview" class="mm-item">変更内容を開く</button>
+            <button id="planList" class="mm-item">予約プラン一覧…</button>
+            <button id="menuHistory" class="mm-item">操作履歴を開く</button>
+            <div class="mm-sep"></div>
+            <button id="reset" class="mm-item mm-warn" disabled>変更を破棄…</button>
+          </div>
+        </div>
+      </div>
+      <div class="tb-group tb-collab">
+        <span class="tb-label">連携</span>
+        <div class="more-wrap">
+          <button id="collabMenuBtn" class="btn btn-domain" type="button" aria-label="連携メニュー">連携 ▾</button>
+          <div id="collabMenu" class="more-menu domain-menu" hidden>
+            <button id="menuChatGroup" class="mm-item">役職からチャットグループ作成</button>
+            <button class="mm-item" disabled>通知（準備中）</button>
+            <button class="mm-item" disabled>承認（準備中）</button>
+          </div>
+        </div>
+      </div>
+      <div class="tb-group tb-help">
+        <span class="tb-label">支援</span>
+        <button id="guideBtn" class="btn btn-guide" type="button">ガイド</button>
       </div>
     </div>
   </header>
