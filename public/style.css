@@ -759,6 +759,8 @@ body {
 }
 .mm-item:hover { background: var(--surface-2); color: var(--ink); }
 .mm-item:disabled { opacity: .4; pointer-events: none; }
+.mm-check { display: flex; align-items: center; gap: 8px; user-select: none; }
+.mm-check input { accent-color: var(--primary); margin: 0; }
 .mm-warn { color: var(--danger); }
 .mm-warn:hover { background: var(--danger-bg); color: var(--danger); }
 .mm-sep { height: 1px; background: var(--line); margin: 5px 8px; }

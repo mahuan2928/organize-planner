@@ -14,6 +14,7 @@ let COMPACT = true;
 const SAVED_DENSITY = localStorage.getItem('orgplanner_density');
 let DENSITY = SAVED_DENSITY === 'full' ? 'full' : 'simple';
 let SHOW_REPORTING = false;   // 汇报線（人→人）: 既定は隠し。ONで上長の下にネスト表示（帰属は部門ツリーで担保）
+let HIDE_NOISE_DEPTS = localStorage.getItem('orgplanner_hide_noise_depts') === '1';
 let SIMPLE = false;           // 旧スタート画面モード（廃止・常に部門ツリー表示）
 let FOCUS = null;             // 任意の集中ドリル（部門サブツリーに絞る）
 let NODES = [];              // フラット部門 working data（草稿）
@@ -346,18 +347,18 @@ function isDeptShown(deptId) {
 }
 // 部門に展開できる子（子部門 or メンバー）があるか
 function hasKids(deptId) {
-  if (NODES.some(n => n.type === 'dept' && !n.deleted && n.parentId === deptId)) return true;
-  for (const m of MEMBERS.values()) if (!m.deleted && m.deptIds.has(deptId)) return true;
+  if (NODES.some(n => isDisplayDept(n) && n.parentId === deptId)) return true;
+  for (const m of MEMBERS.values()) if (memberInVisibleDept(m) && m.deptIds.has(deptId)) return true;
   return false;
 }
 // 表示する部門スコープを決定: focus=選択部門(＋上位＋直下) / simple=トップ階層のみ / full=従来（展開ベース）
 function visibleScope() {
-  if (FOCUS && NODES.some(n => n.id === FOCUS && n.type === 'dept' && !n.deleted)) {
+  if (FOCUS && NODES.some(n => n.id === FOCUS && isDisplayDept(n))) {
     const f = NODES.find(n => n.id === FOCUS);
     const set = new Set([FOCUS]);
     const pid = (f.parentId && f.parentId !== ROOT_ID) ? f.parentId : null;
     if (pid) set.add(pid);
-    NODES.forEach(n => { if (n.type === 'dept' && !n.deleted && n.parentId === FOCUS) set.add(n.id); });
+    NODES.forEach(n => { if (isDisplayDept(n) && n.parentId === FOCUS) set.add(n.id); });
     return { mode: 'focus', set, top: pid || FOCUS };
   }
   return { mode: 'full', set: null, top: null };   // 常に部門ツリー（メンバー表示は DENSITY で制御）
@@ -368,8 +369,8 @@ function buildChartData() {
   const scope = visibleScope();
   // Lark 準拠: 部門は order（管理コンソールの並び順）でソート。集中時は表示最上位を仮想ルート直下へ付け替え（データ上のみ）。
   const deptList = (scope.mode === 'full')
-    ? NODES.filter(n => n.type === 'dept' && !n.deleted && isDeptShown(n.id))
-    : NODES.filter(n => n.type === 'dept' && !n.deleted && scope.set.has(n.id))
+    ? NODES.filter(n => isDisplayDept(n) && isDeptShown(n.id))
+    : NODES.filter(n => isDisplayDept(n) && scope.set.has(n.id))
         .map(n => (scope.top && n.id === scope.top) ? { ...n, parentId: ROOT_ID } : n);
   deptList.sort((a, b) => (a.order != null ? a.order : Infinity) - (b.order != null ? b.order : Infinity))
     .forEach(n => data.push(n));
@@ -391,11 +392,11 @@ function buildChartData() {
   if (DENSITY === 'simple') return data;
   NODES.forEach(dept => {
     const did = dept.id;
-    if (dept.type !== 'dept' || dept.deleted) return;
+    if (!isDisplayDept(dept)) return;
     const deptVisible = scope.mode === 'full' ? isDeptShown(did) : (scope.set && scope.set.has(did));
     const deptOpen = scope.mode === 'focus' ? (did === FOCUS) : EXPANDED.has(did);
     if (!deptVisible || !deptOpen) return;   // メンバーは「展開した部門」だけ表示（既定は畳んでスッキリ）
-    const inDept = [...MEMBERS.values()].filter(m => !m.deleted && m.deptIds.has(did))
+    const inDept = [...MEMBERS.values()].filter(m => memberInVisibleDept(m) && m.deptIds.has(did))
       .sort((a, b) => ((a.deptOrders && a.deptOrders[did]) || 0) - ((b.deptOrders && b.deptOrders[did]) || 0));   // Lark: 部門内並び順
     if (!inDept.length) return;
     const inDeptIds = new Set(inDept.map(m => m.id));
@@ -458,9 +459,49 @@ function recountDepts() {
 }
 function deptHeadcount(id) { return HEADCOUNT[id] ? HEADCOUNT[id].size : 0; }        // 部門全体（子部門含む）
 function deptDirectCount(id) { return DIRECTCOUNT[id] ? DIRECTCOUNT[id].size : 0; }   // 直属のみ
+function displayDeptHeadcount(id) {
+  if (!HIDE_NOISE_DEPTS) return deptHeadcount(id);
+  const deptSet = new Set();
+  const walk = (did) => {
+    const d = NODES.find(n => n.id === did);
+    if (!isDisplayDept(d)) return;
+    deptSet.add(did);
+    NODES.filter(n => isDisplayDept(n) && n.parentId === did).forEach(c => walk(c.id));
+  };
+  walk(id);
+  const memSet = new Set();
+  MEMBERS.forEach(m => {
+    if (memberInVisibleDept(m) && [...m.deptIds].some(did => deptSet.has(did))) memSet.add(m.id);
+  });
+  return memSet.size;
+}
 
 // ---- 親子ヘルパ（草稿）----
 const parentOf = (id) => { const n = NODES.find(x => x.id === id); return n ? n.parentId : null; };
+const NOISE_DEPT_RE = /(test|demo|テスト|デモ|検証|検証用|测试|測試)/i;
+function isNoiseDeptName(name) { return NOISE_DEPT_RE.test(String(name || '')); }
+function isNoiseDeptId(deptId) {
+  let cur = NODES.find(n => n.id === deptId && n.type === 'dept');
+  const seen = new Set();
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (isNoiseDeptName(cur.deptName) || isNoiseDeptName(cur.name)) return true;
+    cur = NODES.find(n => n.id === cur.parentId && n.type === 'dept');
+  }
+  return false;
+}
+function isDisplayDept(n) {
+  return n && n.type === 'dept' && !n.deleted && (!HIDE_NOISE_DEPTS || !isNoiseDeptId(n.id));
+}
+function visibleDeptIds() {
+  return new Set(NODES.filter(isDisplayDept).map(n => n.id));
+}
+function memberInVisibleDept(m) {
+  if (!m || m.deleted) return false;
+  if (!HIDE_NOISE_DEPTS) return true;
+  const ids = visibleDeptIds();
+  return [...m.deptIds].some(id => ids.has(id));
+}
 function isDescendant(target, ancestor) {
   let cur = target;
   while (cur && cur !== ROOT_ID && cur !== '') { if (cur === ancestor) return true; cur = parentOf(cur); }
@@ -560,7 +601,7 @@ function cardHTML(n) {
   const chevron = kids ? (EXPANDED.has(n.id) ? '▾' : '▸') : '';
   const state = n.virtual ? '' : n.isNew ? 'added' : (deptChanged(n) || deptRenamed(n) || deptLeaderChanged(n)) ? 'changed' : '';
   const childDepts = n.type === 'dept' && !n.virtual ? NODES.filter(x => x.type === 'dept' && !x.deleted && x.parentId === n.id).length : 0;
-  const memCnt = n.virtual ? n.count : n.type === 'dept' ? deptHeadcount(n.id) : n.count;   // カード数字＝部門全体の人数（子部門含む・重複なし）
+  const memCnt = n.virtual ? n.count : n.type === 'dept' ? displayDeptHeadcount(n.id) : n.count;   // カード数字＝表示中の部門全体人数（子部門含む・重複なし）
   const directCnt = n.type === 'dept' && !n.virtual ? deptDirectCount(n.id) : 0;
   const cntTip = n.virtual ? '部門未設定のメンバー' : n.type === 'dept' ? `部門全体 ${memCnt} 名（子部門含む）・ 直属 ${directCnt} 名` : '';
   return `
@@ -1007,12 +1048,12 @@ function renderMoveResults(q) {
   q = (q || '').trim().toLowerCase();
   const items = [];
   if (q) {
-    let res = NODES.filter(n => n.type === 'dept' && !n.deleted && n.deptName.toLowerCase().includes(q));
+    let res = NODES.filter(n => isDisplayDept(n) && n.deptName.toLowerCase().includes(q));
     if (moveState) res = res.filter(d => moveValid(d.id));  // 無効な移動先（自分・子孫・現所属）を除外
     res.forEach(d => items.push({ kind: 'dept', id: d.id, name: d.deptName, sub: d.path || '', badge: moveState?.kind === 'member' ? '異動' : '' }));
     if (moveState && moveState.kind === 'member') {   // 人も候補に（上長に設定）
       MEMBERS.forEach(p => {
-        if (p.deleted || p.id === moveState.id) return;
+        if (!memberInVisibleDept(p) || p.id === moveState.id) return;
         if (!(p.name || '').toLowerCase().includes(q)) return;
         if (leaderCycle(moveState.id, p.id)) return;
         items.push({ kind: 'leader', id: p.id, name: p.name, sub: [...p.deptIds].map(deptNameById).join('、'), badge: '上長に設定' });
@@ -1153,13 +1194,13 @@ const ALT_EXPANDED = new Set();
 const byOrder = (a, b) => (a.order != null ? a.order : Infinity) - (b.order != null ? b.order : Infinity);
 // 部門未設定（どの部門にも所属していない／参照先部門が存在しない）メンバー
 function unassignedMembers() {
-  const alive = (id) => NODES.some(n => n.id === id && n.type === 'dept' && !n.deleted);
+  const alive = (id) => NODES.some(n => n.id === id && isDisplayDept(n));
   return [...MEMBERS.values()]
-    .filter(m => !m.deleted && ![...m.deptIds].some(alive))
+    .filter(m => memberInVisibleDept(m) && ![...m.deptIds].some(alive))
     .sort((a, b) => String(a.name).localeCompare(b.name, 'ja'));
 }
 function deptMembers(did) {
-  return [...MEMBERS.values()].filter(m => !m.deleted && m.deptIds.has(did))
+  return [...MEMBERS.values()].filter(m => memberInVisibleDept(m) && m.deptIds.has(did))
     .sort((a, b) => ((a.deptOrders && a.deptOrders[did]) || 0) - ((b.deptOrders && b.deptOrders[did]) || 0));
 }
 function memberStatusShort(m) {
@@ -1196,7 +1237,7 @@ function renderAltView() {
   // ツールは一度だけ（一覧のみ 展開/折りたたみ）
   if (VIEW === 'outline') {
     $('alt-tools').innerHTML = `<button id="alt-expand" class="alt-btn">すべて展開</button><button id="alt-collapse" class="alt-btn">折りたたむ</button>`;
-    $('alt-expand').onclick = () => { NODES.forEach(n => { if (n.type === 'dept' && !n.deleted) ALT_EXPANDED.add(n.id); }); renderAltBody(); };
+    $('alt-expand').onclick = () => { NODES.forEach(n => { if (isDisplayDept(n)) ALT_EXPANDED.add(n.id); }); renderAltBody(); };
     $('alt-collapse').onclick = () => { ALT_EXPANDED.clear(); renderAltBody(); };
   }
   renderAltBody();
@@ -1210,7 +1251,7 @@ function renderAltBody() {
 const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
 function outlineListHTML() {
   const q = ALT_Q;
-  const roots = NODES.filter(n => n.type === 'dept' && !n.deleted && (!n.parentId || n.parentId === ROOT_ID)).sort(byOrder);
+  const roots = NODES.filter(n => isDisplayDept(n) && (!n.parentId || n.parentId === ROOT_ID)).sort(byOrder);
   const html = roots.map(d => outlineDept(d)).filter(Boolean).join('');
   // 部門未設定（無所属）メンバーを末尾グループとして明示
   const orphans = unassignedMembers().filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.title || '').toLowerCase().includes(q));
@@ -1237,7 +1278,7 @@ function outlineListHTML() {
 function outlineDept(d) {
   const q = ALT_Q;
   const members = deptMembers(d.id);
-  const childDepts = NODES.filter(n => n.type === 'dept' && !n.deleted && n.parentId === d.id).sort(byOrder);
+  const childDepts = NODES.filter(n => isDisplayDept(n) && n.parentId === d.id).sort(byOrder);
   const selfMatch = !q || d.deptName.toLowerCase().includes(q);
   const memMatch = members.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.title || '').toLowerCase().includes(q));
   const childHtml = childDepts.map(c => outlineDept(c)).filter(Boolean);
@@ -1260,7 +1301,7 @@ function outlineDept(d) {
       ${leader ? `<span class="olx-leader"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>${esc(leader)}</span>` : ''}
       <span class="olx-spacer"></span>
       ${childDepts.length ? `<span class="olx-subcount">部門 ${childDepts.length}</span>` : ''}
-      <span class="olx-count">${deptHeadcount(d.id)}<span class="olx-count-u">名</span></span>
+      <span class="olx-count">${displayDeptHeadcount(d.id)}<span class="olx-count-u">名</span></span>
     </div>${children}</div>`;
 }
 function memberOutlineRow(m, dept) {
@@ -1281,15 +1322,15 @@ function memberOutlineRow(m, dept) {
 // ---- 部門ボード（カードのグリッド）----
 function boardHTML() {
   const q = ALT_Q;
-  const cards = NODES.filter(n => n.type === 'dept' && !n.deleted)
-    .map(d => ({ d, members: deptMembers(d.id), head: deptHeadcount(d.id), subs: NODES.filter(n => n.type === 'dept' && !n.deleted && n.parentId === d.id).sort(byOrder) }))
+  const cards = NODES.filter(isDisplayDept)
+    .map(d => ({ d, members: deptMembers(d.id), head: displayDeptHeadcount(d.id), subs: NODES.filter(n => isDisplayDept(n) && n.parentId === d.id).sort(byOrder) }))
     .filter(x => x.head > 0)   // 配下（子部門含む）に人がいる部門はすべて表示（親部門も欠落させない）
     .filter(x => !q || x.d.deptName.toLowerCase().includes(q) || x.members.some(m => (m.name || '').toLowerCase().includes(q) || (m.title || '').toLowerCase().includes(q)) || x.subs.some(s => s.deptName.toLowerCase().includes(q)))
     .sort((a, b) => b.head - a.head)
     .map(({ d, members, head, subs }) => {
       const leader = d.leaderId ? (MEMBERS.get(d.leaderId) || {}).name : null;
       // 子部門チップ（クリックでその部門にドリル）
-      const subChips = subs.map(s => `<button class="bd-subchip" data-detail-dept="${s.id}"><span class="bd-subav" style="color:${s.color};background:${softColor(s.color)}">${esc(initials(s.deptName))}</span><span class="bd-subname">${esc(s.deptName)}</span><span class="bd-subn">${deptHeadcount(s.id)}名</span></button>`).join('');
+      const subChips = subs.map(s => `<button class="bd-subchip" data-detail-dept="${s.id}"><span class="bd-subav" style="color:${s.color};background:${softColor(s.color)}">${esc(initials(s.deptName))}</span><span class="bd-subname">${esc(s.deptName)}</span><span class="bd-subn">${displayDeptHeadcount(s.id)}名</span></button>`).join('');
       const subSection = subs.length ? `<div class="bd-sec-h">子部門 ${subs.length}</div><div class="bd-subdepts">${subChips}</div>` : '';
       // 直属メンバーチップ
       const chips = members.map(m => {
@@ -2379,9 +2420,22 @@ $('reset').onclick = () => {
     onOk: () => { resetDraft(); logHist('破棄', `下書きの変更 ${n}件をすべて破棄`); }
   });
 };
-$('expandAll').onclick = () => { closeMore(); NODES.forEach(n => { if (n.type === 'dept') EXPANDED.add(n.id); }); render(); };
+$('expandAll').onclick = () => { closeMore(); NODES.forEach(n => { if (isDisplayDept(n)) EXPANDED.add(n.id); }); render(); };
 $('collapseAll').onclick = () => { closeMore(); EXPANDED.clear(); render(); };
 $('fit').onclick = () => { closeMore(); chart && chart.fit(); };
+function setNoiseFilter(on) {
+  HIDE_NOISE_DEPTS = !!on;
+  localStorage.setItem('orgplanner_hide_noise_depts', HIDE_NOISE_DEPTS ? '1' : '0');
+  const cb = $('hideNoiseDepts'); if (cb) cb.checked = HIDE_NOISE_DEPTS;
+  if (FOCUS && isNoiseDeptId(FOCUS)) FOCUS = null;
+  if (VIEW === 'chart') render();
+  else renderAltBody();
+  showToast(HIDE_NOISE_DEPTS ? 'テスト/デモ部門を非表示にしました。' : 'テスト/デモ部門を表示しました。');
+}
+if ($('hideNoiseDepts')) {
+  $('hideNoiseDepts').checked = HIDE_NOISE_DEPTS;
+  $('hideNoiseDepts').onchange = (e) => setNoiseFilter(e.target.checked);
+}
 // キャンバス左下のズームコントロール
 $('zoom-in').onclick = () => chart && chart.zoomIn();
 $('zoom-out').onclick = () => chart && chart.zoomOut();
@@ -2472,17 +2526,17 @@ function renderHist() {
 // 部門詳細パネルの「所属メンバー」全員リスト（責任者/副/在籍バッジ付き・クリックで人員詳細へ）
 // 部門詳細パネルの「子部門」一覧（親部門の中に子部門を入れる・クリックで下位部門へドリル）
 function deptChildListHTML(deptId) {
-  const kids = NODES.filter(n => n.type === 'dept' && !n.deleted && n.parentId === deptId).sort(byOrder);
+  const kids = NODES.filter(n => isDisplayDept(n) && n.parentId === deptId).sort(byOrder);
   if (!kids.length) return '';
   const rows = kids.map(c => {
     const leader = c.leaderId ? (MEMBERS.get(c.leaderId) || {}).name : null;
-    const grand = NODES.filter(n => n.type === 'dept' && !n.deleted && n.parentId === c.id).length;
+    const grand = NODES.filter(n => isDisplayDept(n) && n.parentId === c.id).length;
     return `<div class="dt-crow" data-detail-dept="${c.id}">
       <span class="dt-cav" style="color:${c.color};background:${softColor(c.color)}">${esc(initials(c.deptName))}</span>
       <span class="dt-cbody"><span class="dt-cname">${esc(c.deptName)}</span>${leader ? `<span class="dt-csub">責任者 ${esc(leader)}</span>` : ''}</span>
       <span class="olx-spacer"></span>
       ${grand ? `<span class="dt-csubcnt">部門 ${grand}</span>` : ''}
-      <span class="dt-ccount">${deptHeadcount(c.id)} 名</span>
+      <span class="dt-ccount">${displayDeptHeadcount(c.id)} 名</span>
     </div>`;
   }).join('');
   return `<div class="dt-mlist"><div class="dt-mlist-h">子部門 <b>${kids.length}</b></div>${rows}</div>`;
@@ -2513,7 +2567,7 @@ function showDetail(kind, id) {
   if (kind === 'dept') {
     const n = NODES.find(x => x.id === id);
     if (!n) { box.innerHTML = '<div class="sp-empty"><div class="spe-title">対象が見つかりません</div></div>'; switchTab('detail'); return; }
-    const kids = NODES.filter(x => x.type === 'dept' && !x.deleted && x.parentId === id).length;
+    const kids = NODES.filter(x => isDisplayDept(x) && x.parentId === id).length;
     const leader = n.leaderId && MEMBERS.get(n.leaderId);
     const state = n.isNew ? '<span class="stchip st-green">新規（下書き）</span>' : n.deleted ? '<span class="stchip st-red">削除予定（下書き）</span>' : (deptChanged(n) || deptRenamed(n)) ? '<span class="stchip st-amber">変更あり（下書き）</span>' : '<span class="stchip st-gray">変更なし</span>';
     box.innerHTML =
@@ -2522,7 +2576,7 @@ function showDetail(kind, id) {
       baRow('部門名', n.origName, n.deptName) +
       baRow('親部門', n.isNew ? 'なし' : parentName(ORIG.get(n.id)), parentName(n.parentId)) +
       row('部門責任者', leader ? (esc(leader.name) + (leader.deptIds.has(n.id) ? '' : ' <span class="stchip st-gray">他部門所属</span>')) : '未設定') +
-      row('部門人数', `${deptHeadcount(id)} 名（子部門含む）`) + row('うち直属', `${deptDirectCount(id)} 名`) + row('子部門数', `${kids}`) +
+      row('部門人数', `${displayDeptHeadcount(id)} 名（表示中の子部門含む）`) + row('うち直属', `${deptDirectCount(id)} 名`) + row('子部門数', `${kids}`) +
       (n.path ? row('パス', esc(n.path)) : '') +
       `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">組織図で表示</button></div>` +
       deptChildListHTML(id) +
@@ -2547,10 +2601,10 @@ function showDetail(kind, id) {
 function searchMatches(q) {
   q = (q || '').trim().toLowerCase(); if (!q) return [];
   const res = [];
-  NODES.forEach(n => { if (n.type === 'dept' && !n.deleted && n.deptName.toLowerCase().includes(q)) res.push({ kind: 'dept', id: n.id, name: n.deptName, sub: n.path || '' }); });
+  NODES.forEach(n => { if (isDisplayDept(n) && n.deptName.toLowerCase().includes(q)) res.push({ kind: 'dept', id: n.id, name: n.deptName, sub: n.path || '' }); });
   MEMBERS.forEach(m => {
-    if (m.deleted || !(m.name || '').toLowerCase().includes(q)) return;
-    const depts = [...m.deptIds];
+    if (!memberInVisibleDept(m) || !(m.name || '').toLowerCase().includes(q)) return;
+    const depts = HIDE_NOISE_DEPTS ? [...m.deptIds].filter(did => isDisplayDept(NODES.find(n => n.id === did))) : [...m.deptIds];
     if (!depts.length) { res.push({ kind: 'member', id: m.id, deptId: '', name: m.name, sub: [m.title, '未所属'].filter(Boolean).join(' ・ ') }); return; }
     const multi = depts.length > 1;              // 兼任: 部門ごとに1件（それぞれ精確に定位）
     depts.forEach(did => res.push({ kind: 'member', id: m.id, deptId: did, name: m.name, sub: [m.title, deptNameById(did) + (multi ? '（兼任）' : '')].filter(Boolean).join(' ・ ') }));
