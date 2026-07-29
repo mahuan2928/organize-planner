@@ -1291,10 +1291,10 @@ function renderJobChatPanel() {
   panel.innerHTML = `
     <section class="job-chat-entry">
       <div>
-        <div class="jc-kicker">役職から Chat Group 作成</div>
-        <div class="jc-entry-title">例: 店長・部長など、同じ役職のメンバーを Lark Chat Group に招待します。</div>
+        <div class="jc-kicker">役職からチャットグループ作成</div>
+        <div class="jc-entry-title">例: 店長・部長など、同じ役職のメンバーを Lark チャットグループに招待します。</div>
       </div>
-      <button id="jobChatOpen" class="jc-open" type="button">Chat Group 作成</button>
+      <button id="jobChatOpen" class="jc-open" type="button">チャットグループ作成</button>
       ${result}
     </section>`;
   const open = $('jobChatOpen');
@@ -1318,24 +1318,24 @@ function renderJobChatModal() {
     overlay.className = 'jc-overlay';
     document.body.appendChild(overlay);
   }
-  const defaultName = `${String(JOB_CHAT_FILTER || '役職').trim()} Chat Group`;
+  const defaultName = `${String(JOB_CHAT_FILTER || '役職').trim()}チャットグループ`;
   overlay.innerHTML = `
     <div class="jc-modal" role="dialog" aria-modal="true" aria-labelledby="jc-title">
       <div class="jc-head">
         <div>
-          <div class="jc-kicker">役職から Chat Group 作成</div>
-          <div id="jc-title" class="jc-title">同じ役職のメンバーを Lark Chat Group に招待</div>
+          <div class="jc-kicker">役職からチャットグループ作成</div>
+          <div id="jc-title" class="jc-title">同じ役職のメンバーを Lark チャットグループに招待</div>
         </div>
         <button id="jobChatClose" class="jc-close" type="button" aria-label="閉じる">×</button>
       </div>
       <div class="jc-controls">
         <label class="jc-field"><span>役職フィルター</span><input id="jobChatFilter" type="text" value="${esc(JOB_CHAT_FILTER)}" placeholder="例: 店長"></label>
-        <label class="jc-field jc-name"><span>Chat Group 名</span><input id="jobChatName" type="text" value="${esc(defaultName)}" placeholder="Chat Group 名"></label>
+        <label class="jc-field jc-name"><span>チャットグループ名</span><input id="jobChatName" type="text" value="${esc(defaultName)}" placeholder="チャットグループ名"></label>
       </div>
       <div id="jobChatPreview"></div>
       <div class="jc-modal-actions">
         <button id="jobChatCancel" class="jc-secondary" type="button">キャンセル</button>
-        <button id="jobChatCreate" class="jc-create" type="button">Chat Group を作成</button>
+        <button id="jobChatCreate" class="jc-create" type="button">チャットグループを作成</button>
       </div>
     </div>`;
   $('jobChatClose').onclick = closeJobChatModal;
@@ -1366,7 +1366,7 @@ function updateJobChatFilter(value) {
   JOB_CHAT_RESULT = null;
   JOB_CHAT_SELECTED = null;
   const nameInput = $('jobChatName');
-  if (nameInput && !nameInput.dataset.touched) nameInput.value = `${String(JOB_CHAT_FILTER || '役職').trim()} Chat Group`;
+  if (nameInput && !nameInput.dataset.touched) nameInput.value = `${String(JOB_CHAT_FILTER || '役職').trim()}チャットグループ`;
   renderJobChatPreview();
 }
 function renderJobChatPreview() {
@@ -1382,14 +1382,14 @@ function renderJobChatPreview() {
       <span class="jc-count">${members.length}名</span>
       <span>招待可能 ${withOpen.length}名</span>
       <span>選択中 ${selected.length}名</span>
-      ${missing.length ? `<span class="jc-warn">open_id なし ${missing.length}名は招待対象外</span>` : '<span>全員招待可能</span>'}
+      ${missing.length ? `<span class="jc-warn">招待用IDなし ${missing.length}名は招待対象外</span>` : '<span>全員招待可能</span>'}
     </div>
     <div class="jc-list">
       ${members.map(m => `<div class="jc-member">
         <label class="jc-select"><input type="checkbox" data-select-member="${m.id}" ${m.openId && JOB_CHAT_SELECTED.has(m.id) ? 'checked' : ''} ${m.openId ? '' : 'disabled'}></label>
         <span class="jc-av">${esc(initials(m.name))}</span>
         <button class="jc-main" data-detail="${m.id}" type="button"><b>${esc(m.name)}</b><small>${esc([m.title || '役職なし', memberDeptNames(m).join('、') || '部門未設定'].join(' ・ '))}</small></button>
-        ${m.openId ? '<span class="jc-ok">招待可</span>' : '<span class="jc-miss">IDなし</span>'}
+        ${m.openId ? '<span class="jc-ok">招待可</span>' : '<span class="jc-miss">招待不可</span>'}
       </div>`).join('')}
       ${!members.length ? '<div class="jc-empty">該当するメンバーがいません。役職名を変更してください。</div>' : ''}
     </div>
@@ -1407,10 +1407,10 @@ function renderJobChatPreview() {
 async function createJobChatGroup() {
   const members = jobChatMembers();
   const withOpen = members.filter(m => m.openId && (!JOB_CHAT_SELECTED || JOB_CHAT_SELECTED.has(m.id)));
-  const name = ($('jobChatName') && $('jobChatName').value.trim()) || `${String(JOB_CHAT_FILTER || '役職').trim()} Chat Group`;
+  const name = ($('jobChatName') && $('jobChatName').value.trim()) || `${String(JOB_CHAT_FILTER || '役職').trim()}チャットグループ`;
   if (!withOpen.length) { showToast('招待できるメンバーがいません。'); return; }
   openConfirm({
-    title: 'Lark Chat Group を作成しますか？',
+    title: 'Lark チャットグループを作成しますか？',
     body: `<div class="cfm-lead">「${esc(name)}」を作成し、${withOpen.length}名を招待します。</div>
       <div class="cfm-meta">現在ログイン中の管理者も参加者に含まれます。</div>`,
     okLabel: '作成する',
@@ -1427,9 +1427,9 @@ async function doCreateJobChatGroup(name, withOpen) {
       members: withOpen.map(m => ({ openId: m.openId, email: m.email, name: m.name })),
       source: { filterField: 'title', filterValue: JOB_CHAT_FILTER }
     });
-    if (!r.ok) throw new Error(r.error || 'Chat Group 作成に失敗しました');
+    if (!r.ok) throw new Error(r.error || 'チャットグループ作成に失敗しました');
     JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名` };
-    showToast('Lark Chat Group を作成しました。');
+    showToast('Lark チャットグループを作成しました。');
   } catch (e) {
     JOB_CHAT_RESULT = { ok: false, message: `作成できませんでした: ${String((e && e.message) || e)}` };
   } finally {
