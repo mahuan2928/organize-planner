@@ -174,7 +174,29 @@ export default {
             description: `組織プランナーで作成: ${s.name || s.openId}`,
             openIds: ids
           });
-          return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, resolvedCount: resolved.length, operatorIncluded: true });
+          let chatTableId = '';
+          let chatLogError = '';
+          try {
+            chatTableId = await lark.ensureChatGroupsTable(env, s.userToken);
+            const source = (body && body.source) || {};
+            const selectedNames = members.map(m => String((m && m.name) || '').trim()).filter(Boolean).join('、');
+            if (chatTableId) {
+              await lark.baseCreate(env, s.userToken, chatTableId, [{
+                'チャットグループ名': result.name || title,
+                'chat_id': result.chatId,
+                '役職フィルター': String(source.filterValue || ''),
+                '招待人数': Math.max(0, ids.length - 1),
+                '選択メンバー': selectedNames,
+                '作成者': s.name || '',
+                '作成者 open_id': s.openId || '',
+                '作成日時': new Date().toISOString(),
+                'ステータス': '作成済み'
+              }]);
+            }
+          } catch (e) {
+            chatLogError = String((e && e.message) || e);
+          }
+          return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, resolvedCount: resolved.length, operatorIncluded: true, chatTableId, chatLogError });
         }
         if (path === '/api/execute' && req.method === 'POST') {
           // 誰が実行したかをサービス層の監査ログへ渡す

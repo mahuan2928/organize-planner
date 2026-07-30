@@ -1429,7 +1429,8 @@ async function doCreateJobChatGroup(name, withOpen) {
       source: { filterField: 'title', filterValue: JOB_CHAT_FILTER }
     });
     if (!r.ok) throw new Error(r.error || 'チャットグループ作成に失敗しました');
-    JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名` };
+    const logNote = r.chatLogError ? `（チャットグループ履歴への記録に失敗: ${r.chatLogError}）` : '';
+    JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名${logNote}` };
     showToast('Lark チャットグループを作成しました。');
     closeJobChatModal();
   } catch (e) {
