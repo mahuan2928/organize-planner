@@ -149,6 +149,10 @@ export default {
         }
         if (path === '/api/plan' && req.method === 'POST') return json(await svc.savePlan(body));
         if (path === '/api/csv-import' && req.method === 'POST') return json(await svc.csvImport(body));
+        if (path === '/api/chatgroups/table' && req.method === 'POST') {
+          const tableId = await lark.ensureChatGroupsTable(env, s.userToken);
+          return json({ ok: true, tableId, url: lark.baseUrl(env, tableId) });
+        }
         if (path === '/api/chatgroups/create' && req.method === 'POST') {
           const title = String((body && body.title) || '').trim();
           const memberOpenIds = Array.isArray(body && body.memberOpenIds) ? body.memberOpenIds : [];
