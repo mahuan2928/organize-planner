@@ -21,4 +21,4 @@ T_PLAN  = "tblQbEznhtba1qlT"
 T_OP    = "tblj8R8wQ87UdHag"
 T_AUDIT = "tblmgQeM1ryWTQSb"
 T_CSV   = "tblef15Ay8BqI5pq"
-# T_CHAT  = "<チャットグループ履歴テーブルID>" # 未設定なら初回作成時に自動作成してKVに保存
+# T_CHAT  = "<チャットグループ履歴テーブルID>" # 手動作成した履歴テーブルIDを設定すると作成済みチャットグループを記録

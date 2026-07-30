@@ -149,10 +149,6 @@ export default {
         }
         if (path === '/api/plan' && req.method === 'POST') return json(await svc.savePlan(body));
         if (path === '/api/csv-import' && req.method === 'POST') return json(await svc.csvImport(body));
-        if (path === '/api/chatgroups/table' && req.method === 'POST') {
-          const tableId = await lark.ensureChatGroupsTable(env, s.userToken);
-          return json({ ok: true, tableId, url: lark.baseUrl(env, tableId) });
-        }
         if (path === '/api/chatgroups/create' && req.method === 'POST') {
           const title = String((body && body.title) || '').trim();
           const memberOpenIds = Array.isArray(body && body.memberOpenIds) ? body.memberOpenIds : [];
@@ -181,7 +177,7 @@ export default {
           let chatTableId = '';
           let chatLogError = '';
           try {
-            chatTableId = await lark.ensureChatGroupsTable(env, s.userToken);
+            chatTableId = lark.chatGroupsTable(env);
             const source = (body && body.source) || {};
             const selectedNames = members.map(m => String((m && m.name) || '').trim()).filter(Boolean).join('、');
             if (chatTableId) {
@@ -196,6 +192,8 @@ export default {
                 '作成日時': new Date().toISOString(),
                 'ステータス': '作成済み'
               }]);
+            } else {
+              chatLogError = 'T_CHAT が未設定のため、チャットグループ履歴には記録していません。';
             }
           } catch (e) {
             chatLogError = String((e && e.message) || e);

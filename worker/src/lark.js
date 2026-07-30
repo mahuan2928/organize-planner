@@ -133,47 +133,8 @@ export async function baseCreate(env, userToken, table, records) {
   return ids;
 }
 
-export async function baseListTables(env, userToken) {
-  const j = await larkFetch(userToken, 'GET', `/open-apis/bitable/v1/apps/${env.BASE_TOKEN}/tables`);
-  return (j.data && (j.data.items || j.data.tables)) || [];
-}
-
-export async function baseCreateTable(env, userToken, table) {
-  const j = await larkFetch(userToken, 'POST', `/open-apis/bitable/v1/apps/${env.BASE_TOKEN}/tables`, {
-    body: { table }
-  });
-  return (j.data && (j.data.table_id || (j.data.table && j.data.table.table_id))) || '';
-}
-
-export async function ensureChatGroupsTable(env, userToken) {
-  if (env.T_CHAT) return env.T_CHAT;
-  const key = `base:${env.BASE_TOKEN}:chat_groups_table`;
-  const cached = env.SESSIONS && await env.SESSIONS.get(key);
-  if (cached) return cached;
-  const tableName = 'チャットグループ履歴';
-  const existing = (await baseListTables(env, userToken)).find(t => t.name === tableName || t.table_name === tableName);
-  const existingId = existing && (existing.table_id || existing.id);
-  if (existingId) {
-    if (env.SESSIONS) await env.SESSIONS.put(key, existingId);
-    return existingId;
-  }
-  const createdId = await baseCreateTable(env, userToken, {
-    name: tableName,
-    default_view_name: '一覧',
-    fields: [
-      { field_name: 'チャットグループ名', type: 1, ui_type: 'Text' },
-      { field_name: 'chat_id', type: 1, ui_type: 'Text' },
-      { field_name: '役職フィルター', type: 1, ui_type: 'Text' },
-      { field_name: '招待人数', type: 2, ui_type: 'Number' },
-      { field_name: '選択メンバー', type: 1, ui_type: 'Text' },
-      { field_name: '作成者', type: 1, ui_type: 'Text' },
-      { field_name: '作成者 open_id', type: 1, ui_type: 'Text' },
-      { field_name: '作成日時', type: 1, ui_type: 'Text' },
-      { field_name: 'ステータス', type: 3, ui_type: 'SingleSelect', property: { options: [{ name: '作成済み' }] } }
-    ]
-  });
-  if (env.SESSIONS && createdId) await env.SESSIONS.put(key, createdId);
-  return createdId;
+export function chatGroupsTable(env) {
+  return env.T_CHAT || '';
 }
 
 /** 1件更新 */

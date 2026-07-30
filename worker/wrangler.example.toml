@@ -25,7 +25,7 @@ T_PLAN  = "<変更計画テーブルID>"
 T_OP    = "<オペレーションテーブルID>"
 T_AUDIT = "<監査ログテーブルID>"
 T_CSV   = "<CSV履歴テーブルID>"
-# T_CHAT  = "<チャットグループ履歴テーブルID>" # 未設定なら初回作成時に自動作成してKVに保存
+# T_CHAT  = "<チャットグループ履歴テーブルID>" # 手動作成した履歴テーブルIDを設定すると作成済みチャットグループを記録
 
 # 秘密情報は wrangler secret で登録（リポジトリには絶対に置かない）
 #   wrangler secret put LARK_APP_ID
