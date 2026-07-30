@@ -2644,6 +2644,7 @@ $('fit').onclick = () => { closeMore(); chart && chart.fit(); };
 $('menuReview').onclick = () => { closeMore(); switchTab('review'); showPanel(); };
 $('menuHistory').onclick = () => { closeMore(); switchTab('hist'); showPanel(); };
 $('exportTreePdf').onclick = () => { closeMore(); exportTreePdf(); };
+$('openChatGroupTable').onclick = () => { closeMore(); openChatGroupTable(); };
 $('menuChatGroup').onclick = () => {
   closeMore();
   if (VIEW !== 'outline') {
@@ -2657,6 +2658,17 @@ $('menuChatGroup').onclick = () => {
   }
   setTimeout(openJobChatModal, 0);
 };
+async function openChatGroupTable() {
+  try {
+    showToast('チャットグループ履歴テーブルを確認しています…');
+    const r = await postJSON('/api/chatgroups/table', {});
+    if (!r.ok) throw new Error(r.error || 'チャットグループ履歴テーブルを作成できませんでした');
+    if (r.url) window.open(r.url, '_blank', 'noopener');
+    showToast('チャットグループ履歴テーブルを開きました。');
+  } catch (e) {
+    showToast(`チャットグループ履歴テーブルを開けませんでした: ${String((e && e.message) || e)}`, true);
+  }
+}
 function ensureChartViewForExport() {
   if (VIEW === 'chart') return;
   VIEW = 'chart';
