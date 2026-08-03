@@ -23,7 +23,20 @@ export function createService(client) {
   const contactPatch = (apiPath, data, params) => contactCall('PATCH', apiPath, data, params);
   const linkIds = (v) => Array.isArray(v) ? v.map(x => x && x.id).filter(Boolean) : [];
   const sel = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
-  const normRole = (v) => String(v || '').trim().toLowerCase();
+  const cellText = (v) => {
+    if (v == null) return '';
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) return v.map(cellText).filter(Boolean).join('、');
+    if (typeof v === 'object') {
+      if ('text' in v) return cellText(v.text);
+      if ('name' in v) return cellText(v.name);
+      if ('value' in v) return cellText(v.value);
+      if ('text_arr' in v) return cellText(v.text_arr);
+      if ('link' in v) return cellText(v.link);
+    }
+    return '';
+  };
+  const normRole = (v) => cellText(v).trim().toLowerCase();
   const chunksOf = (items, size) => {
     const out = [];
     for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -98,14 +111,16 @@ export function createService(client) {
   }
   async function getRoleChatMap() {
     if (!T_CHAT) return new Map();
-    const rows = await fetchTable(T_CHAT).catch(() => []);
+    let rows;
+    try { rows = await fetchTable(T_CHAT); }
+    catch (e) { throw new Error(`チャットグループ管理テーブルの読み取りに失敗: ${String((e && e.message) || e)}`); }
     const map = new Map();
     rows.forEach(r => {
       const role = normRole(r['役職フィルター'] || r['役職'] || r['職位'] || r['职位']);
-      const chatId = String(r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID'] || '').trim();
+      const chatId = cellText(r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID']).trim();
       if (!role || !chatId) return;
       if (!map.has(role)) map.set(role, []);
-      map.get(role).push({ chatId, name: r['チャットグループ名'] || r['グループ名'] || r['群名'] || r['チャット名'] || r['名称'] || r['名前'] || r['Name'] || r['聊天群名称'] || r['群聊名称'] || chatId });
+      map.get(role).push({ chatId, name: cellText(r['チャットグループ名'] || r['グループ名'] || r['群名'] || r['チャット名'] || r['名称'] || r['名前'] || r['Name'] || r['聊天群名称'] || r['群聊名称']) || chatId });
     });
     return map;
   }
@@ -121,7 +136,12 @@ export function createService(client) {
     const newGroups = newRole ? (roleChatMap.get(newRole) || []) : [];
     if (oldRole && !oldGroups.length) notes.push(`旧役職「${oldTitle}」のチャットグループ記録なし`);
     if (newRole && !newGroups.length) notes.push(`新役職「${newTitle}」のチャットグループ記録なし`);
-    for (const g of oldGroups) {
+    const byChatId = (groups) => new Map(groups.map(g => [g.chatId, g]));
+    const oldById = byChatId(oldGroups);
+    const newById = byChatId(newGroups);
+    const removeGroups = [...oldById.values()].filter(g => !newById.has(g.chatId));
+    const addGroups = [...newById.values()].filter(g => !oldById.has(g.chatId));
+    for (const g of removeGroups) {
       try {
         await chatRemoveMembers(g.chatId, [userOpenId]);
         notes.push(`旧役職グループ「${g.name}」から退出`);
@@ -129,7 +149,7 @@ export function createService(client) {
         notes.push(`旧役職グループ「${g.name}」退出失敗: ${String((e && e.message) || e)}`);
       }
     }
-    for (const g of newGroups) {
+    for (const g of addGroups) {
       try {
         await chatAddMembers(g.chatId, [userOpenId]);
         notes.push(`新役職グループ「${g.name}」へ参加`);
@@ -395,7 +415,22 @@ export function createService(client) {
         return resolved;
       };
       const needsRoleChatSync = !isDry && todo.some(o => o.opType === 'MEMBER_UPDATE' && 'newTitle' in o);
-      const roleChatMap = needsRoleChatSync ? await getRoleChatMap() : new Map();
+      let roleChatMap = new Map();
+      let roleChatMapError = '';
+      if (needsRoleChatSync) {
+        try { roleChatMap = await getRoleChatMap(); }
+        catch (e) { roleChatMapError = String((e && e.message) || e); }
+      }
+      const currentMemberTitle = new Map();
+      if (needsRoleChatSync && todo.some(o => !('oldTitle' in o))) {
+        const memberRows = await fetchTable(T_MEM).catch(() => []);
+        memberRows.forEach(r => {
+          const title = cellText(r['役職']);
+          if (r.record_id) currentMemberTitle.set(`rec:${r.record_id}`, title);
+          const open = cellText(r['open_id']).trim();
+          if (open) currentMemberTitle.set(`open:${open}`, title);
+        });
+      }
       for (const o of todo) {
         let ok = false, error = '', chatSync = '';
         try {
@@ -493,8 +528,9 @@ export function createService(client) {
             await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               data, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_UPDATE ${o.targetName}`);
             if (!isDry && 'newTitle' in o) {
-              chatSync = await syncRoleChatMembership(roleChatMap, o.oldTitle, o.newTitle, targetUserOpen);
-              if (/失敗|同期していません/.test(chatSync)) error = chatSync;
+              const oldTitle = ('oldTitle' in o) ? o.oldTitle : (currentMemberTitle.get(`rec:${o.targetRecId}`) || currentMemberTitle.get(`open:${o.targetOpenId}`) || '');
+              chatSync = roleChatMapError || await syncRoleChatMembership(roleChatMap, oldTitle, o.newTitle, targetUserOpen);
+              if (/失敗|同期していません|読み取りに失敗/.test(chatSync)) throw new Error(chatSync);
             }
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
             // 主部門の設定。Lark では is_primary_dept は書込不可（派生値）で、department_order が最大の部門が主部門。
@@ -647,7 +683,7 @@ export function createService(client) {
           [[`実行: ${success}件成功 / ${fail}件失敗\n${actorLine}${detailLines.join('\n')}`, nowStr(), '実行', fail === 0 ? '成功' : '失敗', planRecId ? [{ id: planRecId }] : null]]);
       } catch (_) {}
       return __ok({
-        ok: true, results, success, fail, planStatus,
+        ok: fail === 0, results, success, fail, planStatus,
         unresolvedMembers: appOpen.unresolved   // 失敗した op の原因追跡用
       });
     } catch (e) { throw e; }

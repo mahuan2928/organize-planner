@@ -596,6 +596,7 @@ body {
 .res { font-size: 12px; padding: 7px 10px; border-radius: var(--r-sm); line-height: 1.45; }
 .res.ok { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-line); }
 .res.ng { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-line); }
+.res-sub { margin-top: 3px; font-size: 11px; opacity: .82; }
 
 /* plan form */
 .act-form { display: flex; flex-direction: column; gap: 4px; }

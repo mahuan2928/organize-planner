@@ -2676,7 +2676,7 @@ async function execNow(limit) {
     const body = { planRecId: PLAN.planRecId, ops: PLAN.execOps.slice(start) };
     if (limit) body.limit = limit;
     const r = await postJSON('/api/execute', body);
-    if (!r.ok) throw new Error(r.error);
+    if (!r.ok && !Array.isArray(r.results)) throw new Error(r.error);
     PLAN.doneCount = start + r.results.length;
     PLAN.results = r;
     logHist('実行', `成功 ${r.success}件 ・ 失敗 ${r.fail}件（プラン: ${r.planStatus}）`);
@@ -2685,6 +2685,8 @@ async function execNow(limit) {
     if (r.fail === 0 && PLAN.doneCount >= PLAN.execOps.length) {
       showToast(`${r.success}件の変更を実行しました。最新の組織を再読み込みしています…`);
       setTimeout(load, 1400);
+    } else if (r.fail > 0) {
+      showToast(`実行に失敗した操作があります（成功 ${r.success}件 ・ 失敗 ${r.fail}件）。詳細を確認してください。`, true);
     }
   } catch (e) { setAct('実行に失敗しました: ' + (e.message || e), true); logHist('実行失敗', String((e && e.message) || e)); }
 }
@@ -2725,7 +2727,7 @@ function renderActions() {
     $('btn-all').onclick = () => confirmExec();
   } else {
     const r = PLAN.results;
-    const rows = r.results.map(x => `<div class="res ${x.ok ? 'ok' : 'ng'}">${x.ok ? '✓' : '✗'} ${esc(x.name)}${x.error ? '：' + esc(x.error) : ''}</div>`).join('');
+    const rows = r.results.map(x => `<div class="res ${x.ok ? 'ok' : 'ng'}">${x.ok ? '✓' : '✗'} ${esc(x.name)}${x.error ? '：' + esc(x.error) : ''}${x.chatSync ? `<div class="res-sub">${esc(x.chatSync)}</div>` : ''}</div>`).join('');
     const remaining = PLAN.execOps.length - (PLAN.doneCount || 0);
     el.innerHTML =
       `<div class="act-note">実行結果: <b>成功 ${r.success}件 ・ 失敗 ${r.fail}件</b>（プラン: ${esc(r.planStatus)}）</div>${rows}` +

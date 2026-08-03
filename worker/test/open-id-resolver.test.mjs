@@ -12,7 +12,7 @@ const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 
  * @param aliveOpenIds users/batch で有効と確認できる open_id
  * @param failLookup true なら batch_get_id が例外を投げる（スコープ不足の再現）
  */
-function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false }) {
+function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false, failChatTable = false }) {
   const calls = [];
   return {
     calls,
@@ -21,6 +21,7 @@ function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [
     baseUrl: () => 'https://example.test/base',
     fetchTable: async (t) => {
       if (t === TABLES.member) return members;
+      if (t === TABLES.chat && failChatTable) throw new Error('Base table permission denied');
       if (t === TABLES.chat) return chatRows;
       return [];
     },
@@ -48,9 +49,10 @@ function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [
 }
 
 /** 役職だけ変える最小の op（メンバー1名を参照する） */
-const memberUpdateOp = (openId, recId) => ({
+const memberUpdateOp = (openId, recId, extra = {}) => ({
   opType: 'MEMBER_UPDATE', objType: 'メンバー', targetName: 'テスト太郎',
-  targetOpenId: openId, targetRecId: recId, oldTitle: '主任', newTitle: '課長'
+  targetOpenId: openId, targetRecId: recId, oldTitle: '主任', newTitle: '課長',
+  ...extra
 });
 
 test('メールで現アプリの open_id に解決できる場合、新しい open_id で書き込む', async () => {
@@ -137,4 +139,63 @@ test('役職変更時、旧役職グループから退出し新役職グルー�
   assert.deepEqual(client.calls.find(c => c.method === 'CHAT_ADD'), { method: 'CHAT_ADD', path: 'oc_new', data: ['ou_NEW'] });
   assert.match(r.results[0].chatSync, /旧役職グループ/);
   assert.match(r.results[0].chatSync, /新役職グループ/);
+});
+
+test('役職を空にした場合、旧役職グループから退出し新規参加はしない', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [{ record_id: 'chat1', '役職フィルター': '主任', chat_id: 'oc_old', 'チャットグループ名': '主任チャット' }]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '' })] });
+
+  assert.equal(r.results[0].ok, true);
+  assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_old', data: ['ou_NEW'] });
+  assert.equal(client.calls.filter(c => c.method === 'CHAT_ADD').length, 0);
+});
+
+test('役職を新規設定した場合、新役職グループへ参加し旧グループ退出はしない', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [{ record_id: 'chat2', '役職フィルター': '課長', chat_id: 'oc_new', 'チャットグループ名': '課長チャット' }]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '', newTitle: '課長' })] });
+
+  assert.equal(r.results[0].ok, true);
+  assert.equal(client.calls.filter(c => c.method === 'CHAT_REMOVE').length, 0);
+  assert.deepEqual(client.calls.find(c => c.method === 'CHAT_ADD'), { method: 'CHAT_ADD', path: 'oc_new', data: ['ou_NEW'] });
+});
+
+test('旧役職と新役職が同じ chat_id を共有する場合、退出も参加もしない', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [
+      { record_id: 'chat1', '役職フィルター': '主任', chat_id: 'oc_shared', 'チャットグループ名': '共有チャット' },
+      { record_id: 'chat2', '役職フィルター': '課長', chat_id: 'oc_shared', 'チャットグループ名': '共有チャット' }
+    ]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '課長' })] });
+
+  assert.equal(r.results[0].ok, true);
+  assert.equal(client.calls.filter(c => c.method === 'CHAT_REMOVE').length, 0);
+  assert.equal(client.calls.filter(c => c.method === 'CHAT_ADD').length, 0);
+});
+
+test('チャットグループ管理テーブルを読めない場合、職位更新を成功扱いにしない', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    failChatTable: true
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '' })] });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.results[0].ok, false);
+  assert.match(r.results[0].error, /チャットグループ管理テーブルの読み取りに失敗/);
 });
