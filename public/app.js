@@ -1556,6 +1556,7 @@ function chatGroupErrorMessage(e) {
   if (/99992361/.test(raw) || /open_id cross app/i.test(raw)) {
     return '作成できませんでした: メンバーIDをこのアプリ用に変換できませんでした。メールアドレスと Contact 権限を確認してください。（詳細: Lark 99992361）';
   }
+  if (/群は作成されましたが/.test(raw)) return raw;
   return `作成できませんでした: ${raw}`;
 }
 async function getJSON(url) {

@@ -190,7 +190,7 @@ test('チャットグループ名が group_chat 値の場合、その chat_id �
   const client = mockClient({
     members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
     emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
-    chatRows: [{ record_id: 'chat1', '役職フィルター': '主任', 'チャットグループ名': ['oc_group_field'] }]
+    chatRows: [{ record_id: 'chat1', '役職フィルター': '主任', 'チャットグループ名': [{ id: 'oc_group_field', name: '主任チャット' }] }]
   });
   const svc = createService(client);
   const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '' })] });

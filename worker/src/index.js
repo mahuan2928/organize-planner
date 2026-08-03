@@ -272,7 +272,10 @@ export default {
               const cellValue = (field, value) => {
                 const ui = String(field.ui_type || '').toLowerCase();
                 const type = Number(field.type || 0);
-                if (/group/.test(ui)) return [String(value || '').trim()].filter(Boolean);
+                if (/group/.test(ui)) {
+                  const id = String(value || '').trim();
+                  return id ? [{ id }] : [];
+                }
                 if (/number/.test(ui) || type === 2) return Number(value) || 0;
                 if (/date/.test(ui) || type === 5) return Date.now();
                 if (/single/.test(ui) || type === 3) return String(value || '');
@@ -302,6 +305,18 @@ export default {
             }
           } catch (e) {
             chatLogError = String((e && e.message) || e);
+          }
+          if (chatLogError) {
+            return json({
+              ok: false,
+              error: `群は作成されましたが、チャットグループ管理 Base への記録に失敗しました: ${chatLogError}`,
+              chatCreated: true,
+              chatId: result.chatId,
+              name: result.name,
+              memberCount: ids.length,
+              chatTableId,
+              chatLogError
+            }, 500);
           }
           return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, resolvedCount: resolved.length, operatorIncluded: true, chatTableId, chatLogError });
         }

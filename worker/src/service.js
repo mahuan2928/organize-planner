@@ -33,8 +33,15 @@ export function createService(client) {
       if ('value' in v) return cellText(v.value);
       if ('text_arr' in v) return cellText(v.text_arr);
       if ('link' in v) return cellText(v.link);
+      if ('id' in v) return cellText(v.id);
     }
     return '';
+  };
+  const cellId = (v) => {
+    if (v == null) return '';
+    if (Array.isArray(v)) return v.map(cellId).find(Boolean) || '';
+    if (typeof v === 'object') return cellText(v.id || v.chat_id || v.open_chat_id || v.value).trim();
+    return cellText(v).trim();
   };
   const normRole = (v) => cellText(v).trim().toLowerCase();
   const chunksOf = (items, size) => {
@@ -118,7 +125,8 @@ export function createService(client) {
     rows.forEach(r => {
       const role = normRole(r['役職フィルター'] || r['役職'] || r['職位'] || r['职位']);
       const groupNameValue = r['チャットグループ名'] || r['グループ名'] || r['群名'] || r['チャット名'] || r['名称'] || r['名前'] || r['Name'] || r['聊天群名称'] || r['群聊名称'];
-      const chatId = cellText(r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID'] || groupNameValue).trim();
+      const explicitChatId = r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID'];
+      const chatId = (explicitChatId ? cellText(explicitChatId).trim() : '') || cellId(groupNameValue);
       if (!role || !chatId) return;
       if (!map.has(role)) map.set(role, []);
       map.get(role).push({ chatId, name: cellText(groupNameValue) || chatId });
