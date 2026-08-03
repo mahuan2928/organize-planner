@@ -203,6 +203,19 @@ test('チャットグループ名が group_chat 値の場合、その chat_id �
   assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_group_field', data: ['ou_NEW'] });
 });
 
+test('group_chat フィールド名でも旧役職グループから退出できる', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [{ record_id: 'chat1', '役職フィルター': 'Presales Manager', group_chat: [{ id: 'oc_group_chat', name: 'Presales Manager Chat' }] }]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: 'Ｐｒｅｓａｌｅｓ　Ｍａｎａｇｅｒ', newTitle: '' })] });
+
+  assert.equal(r.results[0].ok, true);
+  assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_group_chat', data: ['ou_NEW'] });
+});
+
 test('チャットグループ管理テーブルを読めない場合、職位更新を成功扱いにしない', async () => {
   const client = mockClient({
     members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],

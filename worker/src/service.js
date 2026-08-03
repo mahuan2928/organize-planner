@@ -43,7 +43,13 @@ export function createService(client) {
     if (typeof v === 'object') return cellText(v.id || v.chat_id || v.open_chat_id || v.value).trim();
     return cellText(v).trim();
   };
-  const normRole = (v) => cellText(v).trim().toLowerCase();
+  const normRole = (v) => cellText(v).normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+  const pickFirst = (...values) => values.find(v => {
+    if (v == null) return false;
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'string') return v.trim();
+    return true;
+  });
   const omitNil = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
   const toBaseDateMs = (v) => {
     if (v == null || v === '') return undefined;
@@ -132,10 +138,13 @@ export function createService(client) {
     catch (e) { throw new Error(`チャットグループ管理テーブルの読み取りに失敗: ${String((e && e.message) || e)}`); }
     const map = new Map();
     rows.forEach(r => {
-      const role = normRole(r['役職フィルター'] || r['役職'] || r['職位'] || r['职位']);
-      const groupNameValue = r['チャットグループ名'] || r['グループ名'] || r['群名'] || r['チャット名'] || r['名称'] || r['名前'] || r['Name'] || r['聊天群名称'] || r['群聊名称'];
-      const explicitChatId = r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID'];
-      const chatId = (explicitChatId ? cellText(explicitChatId).trim() : '') || cellId(groupNameValue);
+      const role = normRole(pickFirst(r['役職フィルター'], r['役職'], r['職位'], r['職種']));
+      const groupNameValue = pickFirst(
+        r['group_chat'], r['Group Chat'], r['チャットグループ'], r['チャットグループ名'],
+        r['グループ名'], r['チャット名'], r['名称'], r['名前'], r['Name']
+      );
+      const explicitChatId = pickFirst(r['chat_id'], r['チャットID'], r['Chat ID'], r['chatId'], r['open_chat_id'], r['openChatId']);
+      const chatId = cellId(explicitChatId) || cellId(groupNameValue);
       if (!role || !chatId) return;
       if (!map.has(role)) map.set(role, []);
       map.get(role).push({ chatId, name: cellText(groupNameValue) || chatId });
@@ -162,17 +171,17 @@ export function createService(client) {
     for (const g of removeGroups) {
       try {
         await chatRemoveMembers(g.chatId, [userOpenId]);
-        notes.push(`旧役職グループ「${g.name}」から退出`);
+        notes.push(`旧役職グループ「${g.name}」(${g.chatId}) から退出`);
       } catch (e) {
-        notes.push(`旧役職グループ「${g.name}」退出失敗: ${String((e && e.message) || e)}`);
+        notes.push(`旧役職グループ「${g.name}」(${g.chatId}) 退出失敗: ${String((e && e.message) || e)}`);
       }
     }
     for (const g of addGroups) {
       try {
         await chatAddMembers(g.chatId, [userOpenId]);
-        notes.push(`新役職グループ「${g.name}」へ参加`);
+        notes.push(`新役職グループ「${g.name}」(${g.chatId}) へ参加`);
       } catch (e) {
-        notes.push(`新役職グループ「${g.name}」参加失敗: ${String((e && e.message) || e)}`);
+        notes.push(`新役職グループ「${g.name}」(${g.chatId}) 参加失敗: ${String((e && e.message) || e)}`);
       }
     }
     return notes.join(' / ');

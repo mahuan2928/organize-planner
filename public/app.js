@@ -2698,12 +2698,15 @@ async function execNow(limit) {
     PLAN.results = r;
     logHist('実行', `成功 ${r.success}件 ・ 失敗 ${r.fail}件（プラン: ${r.planStatus}）`);
     renderDiff();
+    const hasChatSyncNote = Array.isArray(r.results) && r.results.some(x => String(x.chatSync || '').trim());
     // 全件成功で完了したら自動で再同期（失敗あり・部分実行時は結果を残して手動のまま）
-    if (r.fail === 0 && PLAN.doneCount >= PLAN.execOps.length) {
+    if (r.fail === 0 && PLAN.doneCount >= PLAN.execOps.length && !hasChatSyncNote) {
       showToast(`${r.success}件の変更を実行しました。最新の組織を再読み込みしています…`);
       setTimeout(load, 1400);
     } else if (r.fail > 0) {
       showToast(`実行に失敗した操作があります（成功 ${r.success}件 ・ 失敗 ${r.fail}件）。詳細を確認してください。`, true);
+    } else if (hasChatSyncNote) {
+      showToast('組織変更は成功しました。チャットグループ同期の詳細を確認してください。', true);
     }
   } catch (e) { setAct('実行に失敗しました: ' + (e.message || e), true); logHist('実行失敗', String((e && e.message) || e)); }
 }
