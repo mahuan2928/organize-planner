@@ -950,14 +950,14 @@ function startEditMemberTitle(card) {
   const memId = card.dataset.mid;
   const m = MEMBERS.get(memId); if (!m || m.deleted) return;
   const idEl = card.querySelector('.oc-id');
-  if (!idEl || idEl.querySelector('input.oc-title-input')) return;
+  if (!idEl || idEl.querySelector('.oc-title-input')) return;
   card.draggable = false;
   const old = m.title || '';
   let sub = idEl.querySelector('.oc-sub');
   if (!sub) { sub = document.createElement('div'); sub.className = 'oc-sub oc-msub'; idEl.appendChild(sub); }
-  sub.innerHTML = `<input class="oc-rename-input oc-title-input" placeholder="役職を入力" value="${esc(old)}">`;
-  const inp = sub.querySelector('input');
-  inp.focus(); inp.select();
+  sub.innerHTML = titleSelectHtml(old, 'oc-rename-input oc-title-input');
+  const inp = sub.querySelector('select');
+  inp.focus();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
@@ -971,7 +971,8 @@ function startEditMemberTitle(card) {
     }
     render(); renderDiff();
   };
-  inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') finish(false); });
+  inp.addEventListener('change', () => finish(true));
+  inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
   inp.addEventListener('blur', () => finish(true));
   inp.addEventListener('mousedown', (e) => e.stopPropagation());
   inp.addEventListener('click', (e) => e.stopPropagation());
@@ -1008,6 +1009,16 @@ function titleOptions() {
     .sort((a, b) => a.localeCompare(b, 'ja'));
 }
 
+function titleSelectHtml(currentValue, className = 'oc-rename-input dt-inline-input') {
+  const current = String(currentValue || '').trim();
+  const opts = titleOptions();
+  if (current && !opts.includes(current)) opts.unshift(current);
+  return `<select class="${className}" aria-label="役職を選択">
+    <option value="">役職なし</option>
+    ${opts.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('')}
+  </select>`;
+}
+
 function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', options = null) {
   const valEl = row.querySelector('.dt-val') || row;
   if (!valEl || valEl.querySelector('input')) return;
@@ -1031,6 +1042,29 @@ function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', op
   inp.addEventListener('click', (e) => e.stopPropagation());
 }
 
+function startDetailSelectEdit(row, currentValue, onCommit) {
+  const valEl = row.querySelector('.dt-val') || row;
+  if (!valEl || valEl.querySelector('select')) return;
+  valEl.innerHTML = titleSelectHtml(currentValue);
+  const selEl = valEl.querySelector('select');
+  selEl.focus();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true;
+    if (commit) onCommit(selEl.value);
+    else showDetail(SELECTED.kind, SELECTED.id);
+  };
+  selEl.addEventListener('change', () => finish(true));
+  selEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  selEl.addEventListener('blur', () => finish(true));
+  selEl.addEventListener('mousedown', (e) => e.stopPropagation());
+  selEl.addEventListener('click', (e) => e.stopPropagation());
+}
+
 function startDetailDeptNameEdit(row) {
   if (!SELECTED || SELECTED.kind !== 'dept') return;
   const n = NODES.find(x => x.id === SELECTED.id);
@@ -1042,7 +1076,7 @@ function startDetailMemberTitleEdit(row) {
   if (!SELECTED || SELECTED.kind !== 'member') return;
   const m = MEMBERS.get(SELECTED.id);
   if (!m || m.deleted) return;
-  startDetailInlineEdit(row, m.title || '', (val) => updateMemberTitleDraft(m.id, val), '役職を選択または入力', titleOptions());
+  startDetailSelectEdit(row, m.title || '', (val) => updateMemberTitleDraft(m.id, val));
 }
 
 // ================= 移動モード（クリック2ステップ・遠距離対応）=================
