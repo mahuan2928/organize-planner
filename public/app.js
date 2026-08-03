@@ -1001,6 +1001,42 @@ function editMemberTitle(memId) {
   updateMemberTitleDraft(memId, val);
 }
 
+function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '') {
+  const valEl = row.querySelector('.dt-val') || row;
+  if (!valEl || valEl.querySelector('input')) return;
+  valEl.innerHTML = `<input class="oc-rename-input dt-inline-input" placeholder="${esc(placeholder)}" value="${esc(currentValue || '')}">`;
+  const inp = valEl.querySelector('input');
+  inp.focus(); inp.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true;
+    if (commit) onCommit(inp.value);
+    else showDetail(SELECTED.kind, SELECTED.id);
+  };
+  inp.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  inp.addEventListener('blur', () => finish(true));
+  inp.addEventListener('mousedown', (e) => e.stopPropagation());
+  inp.addEventListener('click', (e) => e.stopPropagation());
+}
+
+function startDetailDeptNameEdit(row) {
+  if (!SELECTED || SELECTED.kind !== 'dept') return;
+  const n = NODES.find(x => x.id === SELECTED.id);
+  if (!n || n.deleted) return;
+  startDetailInlineEdit(row, n.deptName, (val) => renameDeptDraft(n.id, val), '部門名');
+}
+
+function startDetailMemberTitleEdit(row) {
+  if (!SELECTED || SELECTED.kind !== 'member') return;
+  const m = MEMBERS.get(SELECTED.id);
+  if (!m || m.deleted) return;
+  startDetailInlineEdit(row, m.title || '', (val) => updateMemberTitleDraft(m.id, val), '役職を入力');
+}
+
 // ================= 移動モード（クリック2ステップ・遠距離対応）=================
 // メンバー異動 と 部門移動 を共通化。moveState = {kind:'member'|'dept', id, srcDept?}
 function startMoveMember(memId, srcDept) {
@@ -2818,6 +2854,12 @@ $('detail-body').addEventListener('click', (e) => {
   const c = e.target.closest('.dt-crow[data-detail-dept]'); if (c) { showDetail('dept', c.dataset.detailDept); return; }   // 子部門へドリル
   const r = e.target.closest('.dt-mrow[data-detail]'); if (r) showDetail('member', r.dataset.detail);
 });
+$('detail-body').addEventListener('dblclick', (e) => {
+  const row = e.target.closest('[data-edit-field]');
+  if (!row) return;
+  if (row.dataset.editField === 'deptName') startDetailDeptNameEdit(row);
+  if (row.dataset.editField === 'memberTitle') startDetailMemberTitleEdit(row);
+});
 $('fb-back').onclick = focusUp;
 $('fb-siblings').onchange = (e) => setFocus(e.target.value);
 $('focusBar').addEventListener('click', (e) => { const c = e.target.closest('.fb-seg[data-focus]'); if (c) setFocus(c.dataset.focus); });
@@ -2926,9 +2968,12 @@ function showDetail(kind, id) {
   SELECTED = { kind, id };
   const box = $('detail-body');
   const row = (lbl, val) => `<div class="dt-row"><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span></div>`;
-  const baRow = (lbl, b, a) => b === a
-    ? row(lbl, esc(a || 'なし'))
-    : `<div class="dt-row dt-changed"><span class="dt-lbl">${lbl}</span><span class="dt-val"><s>${esc(b || 'なし')}</s> <span class="arrow">→</span> <b>${esc(a || 'なし')}</b></span></div>`;
+  const baRow = (lbl, b, a, editField = '') => {
+    const editAttrs = editField ? ` data-edit-field="${editField}" title="ダブルクリックで編集"` : '';
+    const cls = `dt-row${b === a ? '' : ' dt-changed'}${editField ? ' dt-editable' : ''}`;
+    const val = b === a ? esc(a || 'なし') : `<s>${esc(b || 'なし')}</s> <span class="arrow">→</span> <b>${esc(a || 'なし')}</b>`;
+    return `<div class="${cls}"${editAttrs}><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span></div>`;
+  };
   if (kind === 'dept') {
     const n = NODES.find(x => x.id === id);
     if (!n) { box.innerHTML = '<div class="sp-empty"><div class="spe-title">対象が見つかりません</div></div>'; switchTab('detail'); return; }
@@ -2938,12 +2983,12 @@ function showDetail(kind, id) {
     box.innerHTML =
       `<div class="dt-head"><span class="dt-avatar" style="color:${n.color};background:${softColor(n.color)}">${esc(n.avatarChar)}</span>
          <div><div class="dt-name">${esc(n.deptName)}</div><div class="dt-sub">部門 ${state}</div></div></div>` +
-      baRow('部門名', n.origName, n.deptName) +
+      baRow('部門名', n.origName, n.deptName, n.deleted ? '' : 'deptName') +
       baRow('親部門', n.isNew ? 'なし' : parentName(ORIG.get(n.id)), parentName(n.parentId)) +
       row('部門責任者', leader ? (esc(leader.name) + (leader.deptIds.has(n.id) ? '' : ' <span class="stchip st-gray">他部門所属</span>')) : '未設定') +
       row('部門人数', `${displayDeptHeadcount(id)} 名（表示中の子部門含む）`) + row('うち直属', `${deptDirectCount(id)} 名`) + row('子部門数', `${kids}`) +
       (n.path ? row('パス', esc(n.path)) : '') +
-      `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">組織図で表示</button>${n.deleted ? '' : `<button class="di-btn" onclick="editDeptName('${id}')">部門名を変更…</button>`}</div>` +
+      `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">組織図で表示</button></div>` +
       deptChildListHTML(id) +
       deptMemberListHTML(id);
   } else {
@@ -2952,12 +2997,12 @@ function showDetail(kind, id) {
     const state = m.isNew ? '<span class="stchip st-green">新規（下書き）</span>' : m.deleted ? '<span class="stchip st-red">削除予定（下書き）</span>' : (memChanged(m) || memUpdated(m)) ? '<span class="stchip st-amber">変更あり（下書き）</span>' : '<span class="stchip st-gray">変更なし</span>';
     box.innerHTML =
       `<div class="dt-head"><span class="dt-avatar">${esc(initials(m.name))}</span>
-         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub">メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''}</div></div></div>` +
+         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub dt-title-edit" data-edit-field="memberTitle" title="ダブルクリックで役職を編集">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''}</div></div></div>` +
       baRow('所属部門', [...m.origDeptIds].map(deptNameById).join('、') || 'なし', [...m.deptIds].map(deptNameById).join('、') || 'なし') +
-      baRow('役職', m.origTitle || 'なし', m.title || 'なし') +
+      baRow('役職', m.origTitle || 'なし', m.title || 'なし', m.deleted ? '' : 'memberTitle') +
       baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし') +
       (m.email ? row('メール', esc(m.email)) : '') +
-      `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">組織図で表示</button>${m.deleted ? '' : `<button class="di-btn" onclick="editMemberTitle('${id}')">役職を変更…</button>`}${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">異動…</button>`}</div>`;
+      `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">組織図で表示</button>${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">異動…</button>`}</div>`;
   }
   switchTab('detail');
 }
