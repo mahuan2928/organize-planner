@@ -25,6 +25,7 @@
           <span id="stats">読み込み中…</span>
           <span class="sub-sep">・</span>
           <span class="sync-label">最終同期 <span id="syncTime">--:--</span></span>
+          <span id="cacheStatus" class="cache-status" hidden></span>
           <span id="syncDot" class="sync-dot" aria-hidden="true"></span>
           <span id="sessionInfo" class="session-info" hidden>
             <span class="sub-sep">・</span>
@@ -88,7 +89,8 @@
         <div class="more-wrap">
           <button id="manageMenuBtn" class="btn btn-domain" type="button" aria-label="管理メニュー">管理 ▾</button>
           <div id="manageMenu" class="more-menu domain-menu" hidden>
-            <button id="reload" class="mm-item">再読み込み</button>
+            <button id="reload" class="mm-item">再読み込み（キャッシュ可）</button>
+            <button id="forceReload" class="mm-item">強制同期</button>
             <button id="csvImport" class="mm-item">CSVインポート…</button>
             <button id="exportTreePdf" class="mm-item">ツリー図をPDF出力</button>
             <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>

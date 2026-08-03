@@ -741,6 +741,9 @@ body {
 .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); flex: none; }
 .sync-dot.ok { background: #2BB673; box-shadow: 0 0 0 3px rgba(43, 182, 115, .15); }
 .sync-dot.ng { background: var(--danger); box-shadow: 0 0 0 3px rgba(217, 45, 32, .15); }
+.cache-status { font-size: 10.5px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; color: var(--ink-3); background: var(--surface); }
+.cache-status.cache-stale { color: var(--warn); background: var(--warn-bg); border-color: var(--warn-line); }
+.cache-status.cache-force, .cache-status.cache-miss { color: var(--success); background: var(--success-bg); border-color: var(--success-line); }
 #stats { background: none; border: none; padding: 0; font-size: 11.5px; color: var(--ink-3); font-weight: 500; }
 
 /* ---- ヘッダー: 状態チップ ---- */
@@ -923,6 +926,9 @@ body {
 .dt-sub { font-size: 11px; color: var(--ink-3); margin-top: 3px; display: flex; gap: 6px; align-items: center; }
 .dt-title-edit { cursor: text; border-radius: 7px; padding: 2px 5px; margin-left: -5px; }
 .dt-title-edit:hover { background: var(--surface-2); color: var(--ink-2); }
+.dt-edit-btn { margin-left: auto; flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink-3); border-radius: 999px; padding: 1px 7px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; }
+.dt-edit-btn:hover { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-bg); }
+.dt-edit-btn.mini { margin-left: 6px; padding: 0 6px; vertical-align: 1px; }
 .dt-row { display: flex; gap: 10px; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
 .dt-lbl { flex: none; width: 84px; color: var(--ink-3); font-size: 11.5px; font-weight: 600; }
 .dt-val { min-width: 0; }
@@ -1134,6 +1140,7 @@ body {
 .jc-more, .jc-empty { grid-column: 1 / -1; padding: 10px; text-align: center; color: var(--ink-3); font-size: 12px; }
 .jc-result { margin-top: 10px; padding: 9px 10px; border-radius: 10px; font-size: 12px; line-height: 1.5; }
 .jc-result.ok { color: var(--success); background: var(--success-bg); border: 1px solid var(--success-line); }
+.jc-result.warn { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-line); }
 .jc-result.ng { color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-line); }
 .jc-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .jc-secondary {

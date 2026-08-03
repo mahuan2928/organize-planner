@@ -59,13 +59,24 @@ function softColor(hex) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0.14)`;
 }
 
-async function load() {
+function renderCacheStatus(d) {
+  const el = $('cacheStatus');
+  if (!el) return;
+  const status = d.cacheStatus || '';
+  const generated = d.generatedAt ? new Date(d.generatedAt) : null;
+  const label = status === 'hit' ? 'キャッシュ' : status === 'stale' ? '古いキャッシュ・更新中' : status === 'force' ? '強制同期' : status === 'miss' ? '最新取得' : '';
+  el.hidden = !label;
+  el.textContent = label ? `${label}${generated ? ` ${fmtTime(generated)}` : ''}` : '';
+  el.className = `cache-status ${status ? `cache-${status}` : ''}`;
+}
+
+async function load(force = false) {
   $('error').hidden = true;
   $('syncFail').hidden = true;
   $('skeleton').hidden = false;
   $('chart').style.visibility = 'hidden';
   try {
-    const res = await fetch('/api/org');
+    const res = await fetch(force ? '/api/org?force=1' : '/api/org');
     const d = await readApiJson(res, '/api/org');
     // 本番（Worker）ではログイン必須。未ログイン/期限切れならログイン画面へ誘導する
     if (res.status === 401 && d.needLogin) { location.href = '/auth/login'; return; }
@@ -79,10 +90,11 @@ async function load() {
     $('baselink').href = d.base;
     BASE_URL = d.base || '';   // 台帳リンクはサーバー設定から受け取る（テナント固有値をコードに埋め込まない）
     $('stats').textContent = `部門 ${d.stats.depts}件 ・ メンバー ${d.stats.members}名`;
-    LAST_SYNC = new Date();
+    LAST_SYNC = d.generatedAt ? new Date(d.generatedAt) : new Date();
     $('syncTime').textContent = fmtTime(LAST_SYNC);
     $('syncDot').className = 'sync-dot ok';
-    logHist('同期', `Lark / Base から組織を同期（部門 ${d.stats.depts} ・ メンバー ${d.stats.members}）`);
+    renderCacheStatus(d);
+    logHist('同期', `${d.cacheStatus === 'hit' || d.cacheStatus === 'stale' ? 'キャッシュから表示' : 'Lark / Base から組織を同期'}（部門 ${d.stats.depts} ・ メンバー ${d.stats.members}）`);
     NODES = buildFlat(d);
     ORIG.clear(); NODES.forEach(n => { if (n.type === 'dept') ORIG.set(n.id, n.parentId); });
     MEMBERS.clear();
@@ -170,7 +182,7 @@ const ONBOARDING_STEPS = [
   {
     title: '組織プランナーへようこそ',
     body: 'このガイドでは、実際の組織変更に近い流れで使い方を確認します。',
-    tasks: ['対象を検索する', '組織構造を確認する', 'ドラッグで下書きを作る', '差分とリスクを確認する', '予約プランを作成・確定する'],
+    tasks: ['対象を検索する', '組織構造を確認する', 'ドラッグで下書きを作る', '差分とリスクを確認する', '実行計画を保存・確認する'],
     safe: '所要時間は約 1 分です。実行するまで、Lark 側の正式な組織は変更されません。'
   },
   {
@@ -194,10 +206,10 @@ const ONBOARDING_STEPS = [
   },
   {
     selector: '#actionMain',
-    title: '4. 予約プランを作成する',
-    body: '変更があると、右上の主ボタンから予約プランを作成できます。',
-    tasks: ['変更件数を確認', '予約プラン名を入力', '保存後に実行前レビューへ進む'],
-    safe: '予約プラン作成だけでは Lark 組織は変更されません。'
+    title: '4. 実行計画を保存する',
+    body: '変更があると、右上の主ボタンから実行計画を保存できます。',
+    tasks: ['変更件数を確認', '計画名を入力', '保存後に実行前レビューへ進む'],
+    safe: '実行計画の保存だけでは Lark 組織は変更されません。'
   },
   {
     selector: '#actionMain',
@@ -1452,21 +1464,21 @@ function memberDeptNames(m) {
   return [...(m.deptIds || [])].map(deptNameById).filter(Boolean);
 }
 function jobChatMembers() {
-  const q = String(JOB_CHAT_FILTER || '').trim().toLowerCase();
+  const q = String(JOB_CHAT_FILTER || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
   if (!q) return [];
   return [...MEMBERS.values()]
-    .filter(m => memberInVisibleDept(m) && !memberStatusShort(m).resigned && String(m.title || '').toLowerCase().includes(q))
+    .filter(m => memberInVisibleDept(m) && !memberStatusShort(m).resigned && String(m.title || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase() === q)
     .sort((a, b) => String(a.name).localeCompare(b.name, 'ja'));
 }
 function renderJobChatPanel() {
   const panel = $('job-chat-panel');
   if (!panel || VIEW !== 'outline') return;
-  const result = JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${JOB_CHAT_RESULT.ok ? '完了: ' : ''}${esc(JOB_CHAT_RESULT.message)}</div>` : '';
+  const result = JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.warning ? 'warn' : JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${JOB_CHAT_RESULT.ok && !JOB_CHAT_RESULT.warning ? '完了: ' : ''}${esc(JOB_CHAT_RESULT.message)}</div>` : '';
   panel.innerHTML = `
     <section class="job-chat-entry">
       <div>
         <div class="jc-kicker">役職からチャットグループ作成</div>
-        <div class="jc-entry-title">例: 店長・部長など、同じ役職のメンバーを Lark チャットグループに招待します。</div>
+        <div class="jc-entry-title">役職マスタから選んだ同じ役職のメンバーを Lark チャットグループに招待します。</div>
       </div>
       <button id="jobChatOpen" class="jc-open" type="button">チャットグループ作成</button>
       ${result}
@@ -1475,9 +1487,10 @@ function renderJobChatPanel() {
   if (open) open.onclick = openJobChatModal;
   if (JOB_CHAT_MODAL_OPEN) renderJobChatModal();
 }
-function openJobChatModal() {
+async function openJobChatModal() {
   JOB_CHAT_MODAL_OPEN = true;
   JOB_CHAT_RESULT = null;
+  await loadRoleOptions();
   renderJobChatModal();
 }
 function closeJobChatModal() {
@@ -1498,12 +1511,12 @@ function renderJobChatModal() {
       <div class="jc-head">
         <div>
           <div class="jc-kicker">役職からチャットグループ作成</div>
-          <div id="jc-title" class="jc-title">同じ役職のメンバーを Lark チャットグループに招待</div>
+          <div id="jc-title" class="jc-title">同じ役職のメンバーを Lark チャットグループに招待（精確一致）</div>
         </div>
         <button id="jobChatClose" class="jc-close" type="button" aria-label="閉じる">×</button>
       </div>
       <div class="jc-controls">
-        <label class="jc-field"><span>役職フィルター</span><input id="jobChatFilter" type="text" value="${esc(JOB_CHAT_FILTER)}" placeholder="例: 店長"></label>
+        <label class="jc-field"><span>役職</span>${titleSelectHtml(JOB_CHAT_FILTER, '', ROLE_OPTIONS_CACHE || titleOptions()).replace('<select class=""', '<select id="jobChatFilter" class=""')}</label>
         <label class="jc-field jc-name"><span>チャットグループ名</span><input id="jobChatName" type="text" value="${esc(defaultName)}" placeholder="チャットグループ名"></label>
       </div>
       <div id="jobChatPreview"></div>
@@ -1517,14 +1530,11 @@ function renderJobChatModal() {
   overlay.onclick = (e) => { if (e.target === overlay) closeJobChatModal(); };
   const input = $('jobChatFilter');
   if (input) {
-    input.oncompositionstart = () => { input.dataset.composing = '1'; };
-    input.oncompositionend = (e) => {
-      input.dataset.composing = '';
-      updateJobChatFilter(e.target.value);
-    };
-    input.oninput = (e) => {
-      if (input.dataset.composing === '1') return;
-      updateJobChatFilter(e.target.value);
+    input.onchange = (e) => {
+      if (e.target.value === '__custom__') {
+        const custom = window.prompt('役職を入力してください', JOB_CHAT_FILTER || '');
+        updateJobChatFilter(custom == null ? JOB_CHAT_FILTER : custom);
+      } else updateJobChatFilter(e.target.value);
     };
   }
   const nameInput = $('jobChatName');
@@ -1567,7 +1577,7 @@ function renderJobChatPreview() {
       </div>`).join('')}
       ${!members.length ? '<div class="jc-empty">該当するメンバーがいません。役職名を変更してください。</div>' : ''}
     </div>
-    ${JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${esc(JOB_CHAT_RESULT.message)}</div>` : ''}`;
+    ${JOB_CHAT_RESULT ? `<div class="jc-result ${JOB_CHAT_RESULT.warning ? 'warn' : JOB_CHAT_RESULT.ok ? 'ok' : 'ng'}">${esc(JOB_CHAT_RESULT.message)}</div>` : ''}`;
   const btn = $('jobChatCreate');
   if (btn) btn.disabled = !selected.length || JOB_CHAT_BUSY;
   preview.querySelectorAll('[data-select-member]').forEach(input => input.onchange = () => {
@@ -1606,8 +1616,8 @@ async function doCreateJobChatGroup(name, withOpen) {
       source: { filterField: 'title', filterValue: JOB_CHAT_FILTER }
     });
     if (!r.ok) throw new Error(r.error || 'チャットグループ作成に失敗しました');
-    const logNote = r.chatLogError ? `（チャットグループ履歴への記録に失敗: ${r.chatLogError}）` : '';
-    JOB_CHAT_RESULT = { ok: true, message: `作成しました: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名${logNote}` };
+    const logNote = r.chatLogError ? ` / 台帳記録に失敗しました。chat_id: ${r.chatId || '不明'}。チャットグループ管理へ手動補登するか、後で再記録してください。理由: ${r.chatLogError}` : '';
+    JOB_CHAT_RESULT = { ok: true, warning: !!r.chatLogError, message: `${r.chatLogError ? 'チャットグループは作成済みです' : '作成しました'}: ${r.name || name}${r.chatId ? `（${r.chatId}）` : ''} / ${r.memberCount || withOpen.length}名${logNote}` };
     showToast('Lark チャットグループを作成しました。');
     closeJobChatModal();
   } catch (e) {
@@ -2404,8 +2414,8 @@ function renderHeaderState(opsLen) {
   if (ds) { ds.hidden = !opsLen; if (opsLen) $('ds-count').textContent = `${opsLen}件`; }
   const cp = $('chip-plan'); const ph = planPhase();
   const map = {
-    none: ['st-gray', '予約プラン未作成'],
-    saved: ['st-amber', '予約プラン作成済み・確定待ち'],
+    none: ['st-gray', '実行計画未保存'],
+    saved: ['st-amber', '実行計画保存済み・実行待ち'],
     partial: ['st-amber', '一部実行済み'],
     failed: ['st-red', '実行に失敗した項目あり'],
     done: ['st-green', '実行済み']
@@ -2415,7 +2425,7 @@ function renderHeaderState(opsLen) {
   const btn = $('actionMain');
   if (ph === 'done') { btn.disabled = false; btn.textContent = '再読み込みして反映'; btn.onclick = load; btn.title = 'Lark に反映済み。最新の組織を再読み込みします'; }
   else if (ph === 'saved' || ph === 'partial') { btn.disabled = false; btn.textContent = '予約を確定…'; btn.onclick = () => { switchTab('review'); confirmExec(); }; btn.title = '確定するまで Lark は変更されません。押すと確認画面が開きます'; }
-  else if (opsLen) { btn.disabled = false; btn.textContent = `予約プランを作成（${opsLen}件）`; btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = '下書きを予約プランとして保存します（この時点では Lark に未反映）'; }
+  else if (opsLen) { btn.disabled = false; btn.textContent = `実行計画を保存（${opsLen}件）`; btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = '下書きを実行計画として保存します（この時点では Lark に未反映）'; }
   else { btn.disabled = true; btn.textContent = '変更なし'; btn.onclick = null; btn.title = '部門を選んで組織を編集できます'; }
 }
 
@@ -2440,7 +2450,7 @@ function renderDiff() {
          <div class="rs-cell ${risks.high ? 'rs-risk' : ''}"><span class="rs-num">${risks.high + risks.medium}</span><span class="rs-lbl">要注意（High ${risks.high}）</span></div>
        </div>
        <div class="rs-chips">${Object.keys(OP_CHIP).filter(k => cnt[k]).map(k => `<span class="chip chip-${OP_CLS[k]}">${OP_CHIP[k]} ${cnt[k]}</span>`).join('')}</div>
-       <div class="rs-note">下書きの変更です。予約プランの作成 → 予約の確定までは、正式な組織には反映されません。</div>`
+       <div class="rs-note">下書きの変更です。実行計画の保存 → 手動実行までは、正式な組織には反映されません。</div>`
     : '';
   $('diff-list').innerHTML = ops.map(o => {
     const risk = riskOf(o);
@@ -2468,7 +2478,7 @@ function renderDiff() {
   renderActions();
 }
 
-// 読み込んだ予約プランを読み取り専用でレビュー欄に表示
+// 読み込んだ実行計画を読み取り専用でレビュー欄に表示
 function renderLoadedPlan() {
   const p = PLAN;
   $('reset').disabled = true;
@@ -2478,7 +2488,7 @@ function renderLoadedPlan() {
   $('diffPanel') && ($('diffPanel').hidden = false);
   $('review-summary').innerHTML =
     `<div class="rs-note" style="color:var(--primary);background:var(--primary-soft);border-color:#D6E4FD;display:flex;gap:8px;align-items:center;justify-content:space-between;">
-       <span>読み込んだ予約プラン「${esc(p.name || '')}」・${p.execOps.length} 件</span>
+       <span>読み込んだ実行計画「${esc(p.name || '')}」・${p.execOps.length} 件</span>
        <button id="loaded-close" class="di-btn">閉じる</button></div>`;
   const lc = $('loaded-close'); if (lc) lc.onclick = () => { PLAN = null; render(); renderDiff(); };
   $('diff-list').innerHTML = p.execOps.map(o => `
@@ -2493,7 +2503,7 @@ function renderLoadedPlan() {
   renderHeaderState(0);
   renderActions();
 }
-// ⋯メニュー → 予約プラン一覧
+// ⋯メニュー → 実行計画一覧
 async function openPlanList() {
   closeMore();
   cancelMove(); closeAddBar(); closeLeaderBar();
@@ -2509,14 +2519,14 @@ function closePlanList() { $('planOverlay').hidden = true; }
 const PLAN_STATUS_CLS = { '予約済み': 'st-amber', '実行中': 'st-amber', '完了': 'st-green', '部分失敗': 'st-red', '失敗': 'st-red' };
 function renderPlanRows(plans) {
   const box = $('plan-list');
-  if (!plans.length) { box.innerHTML = '<div class="sr-empty">保存された予約プランはありません。</div>'; return; }
+  if (!plans.length) { box.innerHTML = '<div class="sr-empty">保存された実行計画はありません。</div>'; return; }
   box.innerHTML = plans.map((p, i) => {
     const done = p.status === '完了' || p.status === '実行中' || p.status === '部分失敗';
     const stCls = PLAN_STATUS_CLS[p.status] || 'st-gray';
     return `<div class="plan-row">
       <div class="plan-main">
         <div class="plan-name">${esc(p.name)}<span class="stchip ${stCls}" style="margin-left:8px;">${esc(p.status || '—')}</span></div>
-        <div class="plan-meta">${esc(p.summary || `${p.opCount} 件`)}${p.effectiveDate ? ` ・ 予定 ${esc(p.effectiveDate)}` : ''}${p.createdBy ? ` ・ ${esc(p.createdBy)}` : ''}${p.result ? ` ・ ${esc(p.result)}` : ''}</div>
+        <div class="plan-meta">${esc(p.summary || `${p.opCount} 件`)}${p.effectiveDate ? ` ・ 目安 ${esc(p.effectiveDate)}` : ''}${p.createdBy ? ` ・ ${esc(p.createdBy)}` : ''}${p.result ? ` ・ ${esc(p.result)}` : ''}</div>
       </div>
       <button class="act ${done || !p.opCount ? '' : 'act-primary'} plan-open" data-i="${i}" ${(done || !p.opCount) ? 'disabled' : ''}>${done ? '実行済み' : (p.opCount ? 'この画面で開く' : '再開不可')}</button>
     </div>`;
@@ -2529,7 +2539,7 @@ function loadSavedPlan(p) {
   PLAN = { planRecId: p.recId, name: p.name, planUrl: BASE_URL, execOps: p.ops.map(o => ({ ...o })), loaded: true };
   closePlanList();
   switchTab('review'); renderDiff();
-  showToast(`予約プラン「${p.name}」を読み込みました。内容を確認して実行できます。`);
+  showToast(`実行計画「${p.name}」を読み込みました。内容を確認して手動実行できます。`);
 }
 $('planList').onclick = openPlanList;
 $('plan-close').onclick = closePlanList;
@@ -2674,10 +2684,10 @@ function showSaveForm() {
     `<div class="act-form">
        <label class="act-lbl">プラン名</label>
        <input id="f-name" class="act-input" value="組織変更 ${new Date().toISOString().slice(0, 10)}">
-       <label class="act-lbl">反映予定日時</label>
+       <label class="act-lbl">実行目安日時</label>
        <input id="f-date" class="act-input" type="datetime-local" value="${nowLocalInput()}">
-       <div class="act-hint">※ 指定時刻の自動実行には現在対応していません。時刻になったら「予約を確定」を押してください（台帳には予定として記録されます）。</div>
-       <div class="act-row"><button id="f-save" class="act act-primary">予約プランを作成</button><button id="f-cancel" class="act">キャンセル</button></div>
+       <div class="act-hint">※ 自動実行ではありません。保存後、実行前レビューで手動実行すると Lark に反映されます。</div>
+       <div class="act-row"><button id="f-save" class="act act-primary">実行計画を保存</button><button id="f-cancel" class="act">キャンセル</button></div>
      </div>`;
   $('f-name').focus();
   $('f-save').onclick = doSave;
@@ -2689,14 +2699,14 @@ async function doSave() {
   // datetime-local の "YYYY-MM-DDTHH:mm" を台帳の "YYYY-MM-DD HH:mm:ss" 表記へ整形（送信内容の意味は不変）
   let eff = ($('f-date').value || '').trim().replace('T', ' ');
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(eff)) eff += ':00';
-  setAct('予約プランを作成しています…');
+  setAct('実行計画を保存しています…');
   try {
     const r = await postJSON('/api/plan', { name, effectiveDate: eff, summary: summaryText(), operations: ops });
     if (!r.ok) throw new Error(r.error);
     PLAN = { planRecId: r.planRecId, planUrl: r.planUrl, name, execOps: ops.map((o, i) => ({ ...o, opRecId: r.opRecIds[i] })) };
-    logHist('プラン作成', `「${name}」（${ops.length} 件）を Base 台帳に保存`);
+    logHist('計画保存', `「${name}」（${ops.length} 件）を Base 台帳に保存`);
     renderDiff();
-  } catch (e) { setAct('予約プランの作成に失敗しました: ' + (e.message || e), true); logHist('プラン作成失敗', String((e && e.message) || e)); }
+  } catch (e) { setAct('実行計画の保存に失敗しました: ' + (e.message || e), true); logHist('計画保存失敗', String((e && e.message) || e)); }
 }
 async function confirmExec(limit) {
   const start = PLAN.doneCount || 0;                       // 実行済み件数（部分実行のカーソル）
@@ -2719,9 +2729,9 @@ async function confirmExec(limit) {
     renderActions();
   } catch (_) { renderActions(); /* 下見に失敗しても確認自体は続行する */ }
   openConfirm({
-    title: '予約の確定',
+    title: '手動実行の確認',
     body:
-      `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・予約はすべて未反映でした。</div>
+      `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・実行計画はすべて未反映でした。</div>
        ${preflight}
        <div class="cfm-grid">
          <div><span class="cfm-num">${n}</span><span class="cfm-lbl">実行する変更</span></div>
@@ -2772,7 +2782,7 @@ async function execNow(limit) {
     // 全件成功で完了したら自動で再同期（失敗あり・部分実行時は結果を残して手動のまま）
     if (r.fail === 0 && PLAN.doneCount >= PLAN.execOps.length && !hasChatSyncNote) {
       showToast(`${r.success}件の変更を実行しました。最新の組織を再読み込みしています…`);
-      setTimeout(load, 1400);
+      setTimeout(() => load(true), 1400);
     } else if (r.fail > 0) {
       showToast(`実行に失敗した操作があります（成功 ${r.success}件 ・ 失敗 ${r.fail}件）。詳細を確認してください。`, true);
     } else if (hasChatSyncNote) {
@@ -2801,15 +2811,15 @@ function renderActions() {
   if (!ops.length && !(PLAN && PLAN.loaded)) { el.innerHTML = ''; return; }
   if (!PLAN) {
     el.innerHTML =
-      `<button id="btn-save" class="act act-primary">予約プランを作成</button>` +
-      `<div class="act-hint">保存しても <b>Lark には反映されません</b>（規划器内の下書き）。次の「実行」で初めて反映されます。</div>`;
+      `<button id="btn-save" class="act act-primary">実行計画を保存</button>` +
+      `<div class="act-hint">保存しても <b>Lark には反映されません</b>。手動実行で初めて反映されます。</div>`;
     $('btn-save').onclick = showSaveForm;
   } else if (!PLAN.results) {
     // 新規作成を含む計画は一括実行のみ（部分実行だと仮ID new|x の解決マップがリクエストをまたげないため）
     const hasCreate = PLAN.execOps.some(o => o.opType === 'DEPT_CREATE' || o.opType === 'MEMBER_CREATE');
     el.innerHTML =
-      `<div class="act-note">予約プランを作成しました（<b>まだ Lark に未反映</b>）<a href="${PLAN.planUrl}" target="_blank">台帳を開く ↗</a></div>` +
-      (hasCreate ? `<div class="act-hint">新規作成を含むプランのため、まとめて実行のみになります</div>`
+      `<div class="act-note">実行計画を保存しました（<b>まだ Lark に未反映</b>）<a href="${PLAN.planUrl}" target="_blank">台帳を開く ↗</a></div>` +
+      (hasCreate ? `<div class="act-hint">新規作成を含む計画のため、まとめて実行のみになります</div>`
                  : `<button id="btn-test" class="act act-primary">まず1件のみ実行</button>`) +
       `<button id="btn-all" class="act act-danger">すべて実行（${PLAN.execOps.length}件）</button>` +
       `<div class="act-hint">「実行」を押すと、この時点で初めて Lark の組織に反映されます。</div>`;
@@ -2825,7 +2835,7 @@ function renderActions() {
       `<button id="btn-refresh" class="act act-primary">再読み込みして反映</button>` +
       `<div class="act-hint">Lark の組織と Base の台帳を更新しました。再読み込みで最新の状態を表示します。</div>`;
     const ba = $('btn-all'); if (ba) ba.onclick = () => confirmExec();
-    $('btn-refresh').onclick = load;
+    $('btn-refresh').onclick = () => load(true);
   }
 }
 
@@ -2847,7 +2857,8 @@ bindDomainMenu('displayMenuBtn', 'displayMenu');
 bindDomainMenu('collabMenuBtn', 'collabMenu');
 bindDomainMenu('manageMenuBtn', 'manageMenu');
 document.addEventListener('click', (e) => { if (!e.target.closest('.more-wrap')) closeMore(); });
-$('reload').onclick = () => { closeMore(); guardUnsaved('再読み込みすると、未保存の変更は破棄されます。', load); };
+$('reload').onclick = () => { closeMore(); guardUnsaved('再読み込みすると、未保存の変更は破棄されます。', () => load(false)); };
+$('forceReload').onclick = () => { closeMore(); guardUnsaved('強制同期すると、未保存の変更は破棄されます。', () => load(true)); };
 $('reset').onclick = () => {
   closeMore();
   const n = operations().length; if (!n) return;
@@ -2966,6 +2977,14 @@ document.querySelectorAll('#densitySeg .dseg').forEach(b => b.onclick = () => se
 $('reportToggle').onchange = (e) => { SHOW_REPORTING = e.target.checked; render(); };
 // 部門詳細パネルの所属メンバー行 → 人員詳細へ
 $('detail-body').addEventListener('click', (e) => {
+  const edit = e.target.closest('.dt-edit-btn[data-edit-field]');
+  if (edit) {
+    e.stopPropagation();
+    const row = edit.closest('[data-edit-field]');
+    if (edit.dataset.editField === 'deptName') startDetailDeptNameEdit(row);
+    if (edit.dataset.editField === 'memberTitle') startDetailMemberTitleEdit(row);
+    return;
+  }
   const c = e.target.closest('.dt-crow[data-detail-dept]'); if (c) { showDetail('dept', c.dataset.detailDept); return; }   // 子部門へドリル
   const r = e.target.closest('.dt-mrow[data-detail]'); if (r) showDetail('member', r.dataset.detail);
 });
@@ -3084,10 +3103,11 @@ function showDetail(kind, id) {
   const box = $('detail-body');
   const row = (lbl, val) => `<div class="dt-row"><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span></div>`;
   const baRow = (lbl, b, a, editField = '') => {
-    const editAttrs = editField ? ` data-edit-field="${editField}" title="ダブルクリックで編集"` : '';
+    const editAttrs = editField ? ` data-edit-field="${editField}" title="編集できます"` : '';
     const cls = `dt-row${b === a ? '' : ' dt-changed'}${editField ? ' dt-editable' : ''}`;
     const val = b === a ? esc(a || 'なし') : `<s>${esc(b || 'なし')}</s> <span class="arrow">→</span> <b>${esc(a || 'なし')}</b>`;
-    return `<div class="${cls}"${editAttrs}><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span></div>`;
+    const editBtn = editField ? `<button class="dt-edit-btn" type="button" data-edit-field="${editField}">編集</button>` : '';
+    return `<div class="${cls}"${editAttrs}><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span>${editBtn}</div>`;
   };
   if (kind === 'dept') {
     const n = NODES.find(x => x.id === id);
@@ -3112,7 +3132,7 @@ function showDetail(kind, id) {
     const state = m.isNew ? '<span class="stchip st-green">新規（下書き）</span>' : m.deleted ? '<span class="stchip st-red">削除予定（下書き）</span>' : (memChanged(m) || memUpdated(m)) ? '<span class="stchip st-amber">変更あり（下書き）</span>' : '<span class="stchip st-gray">変更なし</span>';
     box.innerHTML =
       `<div class="dt-head"><span class="dt-avatar">${esc(initials(m.name))}</span>
-         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub dt-title-edit" data-edit-field="memberTitle" title="ダブルクリックで役職を編集">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''}</div></div></div>` +
+         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub dt-title-edit" data-edit-field="memberTitle" title="役職を編集できます">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''} <button class="dt-edit-btn mini" type="button" data-edit-field="memberTitle">編集</button></div></div></div>` +
       baRow('所属部門', [...m.origDeptIds].map(deptNameById).join('、') || 'なし', [...m.deptIds].map(deptNameById).join('、') || 'なし') +
       baRow('役職', m.origTitle || 'なし', m.title || 'なし', m.deleted ? '' : 'memberTitle') +
       baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし') +

@@ -607,7 +607,6 @@ export function createService(client) {
             if (!isDry && 'newTitle' in o) {
               const oldTitle = ('oldTitle' in o) ? o.oldTitle : (currentMemberTitle.get(`rec:${o.targetRecId}`) || currentMemberTitle.get(`open:${o.targetOpenId}`) || '');
               chatSync = roleChatMapError || await syncRoleChatMembership(roleChatMap, oldTitle, o.newTitle, targetUserOpen);
-              if (/失敗|同期していません|読み取りに失敗/.test(chatSync)) throw new Error(chatSync);
             }
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
             // 主部門の設定。Lark では is_primary_dept は書込不可（派生値）で、department_order が最大の部門が主部門。

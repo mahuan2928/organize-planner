@@ -320,15 +320,15 @@ export default {
           }
           if (chatLogError) {
             return json({
-              ok: false,
-              error: `群は作成されましたが、チャットグループ管理 Base への記録に失敗しました: ${chatLogError}`,
+              ok: true,
+              warning: true,
               chatCreated: true,
               chatId: result.chatId,
               name: result.name,
               memberCount: ids.length,
               chatTableId,
               chatLogError
-            }, 500);
+            });
           }
           return json({ ok: true, chatId: result.chatId, name: result.name, memberCount: ids.length, resolvedCount: resolved.length, operatorIncluded: true, chatTableId, chatLogError });
         }

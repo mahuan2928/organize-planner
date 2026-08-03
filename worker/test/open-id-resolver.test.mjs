@@ -217,7 +217,7 @@ test('group_chat フィールド名でも旧役職グループから退出でき
   assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_group_chat', data: ['ou_NEW'] });
 });
 
-test('チャットグループ管理テーブルを読めない場合、職位更新を成功扱いにしない', async () => {
+test('チャットグループ管理テーブルを読めない場合、職位更新は成功し同期警告を残す', async () => {
   const client = mockClient({
     members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
     emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
@@ -226,9 +226,9 @@ test('チャットグループ管理テーブルを読めない場合、職位�
   const svc = createService(client);
   const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '' })] });
 
-  assert.equal(r.ok, false);
-  assert.equal(r.results[0].ok, false);
-  assert.match(r.results[0].error, /チャットグループ管理テーブルの読み取りに失敗/);
+  assert.equal(r.ok, true);
+  assert.equal(r.results[0].ok, true);
+  assert.match(r.results[0].chatSync, /チャットグループ管理テーブルの読み取りに失敗/);
 });
 
 test('予約プラン保存は日付をミリ秒、リンクをrecord_id配列で書き込む', async () => {
