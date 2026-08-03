@@ -195,23 +195,36 @@ export default {
             const selectedNames = members.map(m => String((m && m.name) || '').trim()).filter(Boolean).join('、');
             if (chatTableId) {
               const fields = await lark.baseListFields(env, s.userToken, chatTableId, tenantConfig).catch(() => []);
-              const fieldNames = new Set(fields.map(f => f.field_name || f.name).filter(Boolean));
-              const pick = (...names) => names.find(n => fieldNames.has(n));
+              const fieldByName = new Map(fields.map(f => [f.field_name || f.name, f]).filter(([name]) => name));
+              const pick = (...names) => names.map(n => fieldByName.get(n)).find(Boolean);
+              const isWritable = (field) => {
+                const ui = String(field.ui_type || '').toLowerCase();
+                return !/(formula|lookup|created|modified|auto)/.test(ui);
+              };
+              const cellValue = (field, value) => {
+                const ui = String(field.ui_type || '').toLowerCase();
+                const type = Number(field.type || 0);
+                if (/number/.test(ui) || type === 2) return Number(value) || 0;
+                if (/date/.test(ui) || type === 5) return Date.now();
+                if (/single/.test(ui) || type === 3) return String(value || '');
+                if (/text|url|barcode|phone|email/.test(ui) || type === 1 || type === 13 || type === 15) return String(value || '');
+                return String(value || '');
+              };
               const record = {};
               const put = (names, value) => {
-                const key = pick(...names);
-                if (key) record[key] = value;
+                const field = pick(...names);
+                if (field && isWritable(field)) record[field.field_name || field.name] = cellValue(field, value);
               };
-              put(['チャットグループ名', 'グループ名', '群名', 'チャット名'], result.name || title);
-              put(['chat_id', 'チャットID', 'Chat ID', 'chatId'], result.chatId);
+              put(['チャットグループ名', 'グループ名', '群名', 'チャット名', '名称', '名前', 'Name', '聊天群名称', '群聊名称'], result.name || title);
+              put(['chat_id', 'チャットID', 'Chat ID', 'chatId', '群ID', '群聊ID', '聊天群ID'], result.chatId);
               put(['役職フィルター', '役職', '職位', '职位'], String(source.filterValue || '').trim());
               put(['招待人数', '人数', 'メンバー数', '成员数'], Math.max(0, ids.length - 1));
-              put(['選択メンバー', 'メンバー', '成员', '参加者'], selectedNames);
+              put(['選択メンバー', 'メンバー', '成员', '参加者', '参加メンバー', '群成员'], selectedNames);
               put(['作成者', '创建者'], s.name || '');
               put(['作成者 open_id', '作成者open_id', 'creator_open_id'], s.openId || '');
               put(['作成日時', '作成時間', '创建时间'], new Date().toISOString());
               put(['ステータス', '状态'], '作成済み');
-              if (!Object.keys(record).length) throw new Error('書き込み可能な対応フィールドがありません');
+              if (!Object.keys(record).length) throw new Error(`書き込み可能な対応フィールドがありません。検出フィールド: ${[...fieldByName.keys()].join(', ')}`);
               await lark.baseCreate(env, s.userToken, chatTableId, [record], tenantConfig);
             } else {
               chatLogError = 'T_CHAT 未設定かつ「チャットグループ管理」テーブルを見つけられないため、Base には記録していません。';

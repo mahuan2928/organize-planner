@@ -42,8 +42,10 @@ export async function larkFetch(token, method, path, { params, body } = {}) {
   });
   const j = await r.json().catch(() => ({}));
   if (j.code != null && j.code !== 0) {
-    const e = new Error(`Lark ${j.code}: ${j.msg || ''}`);
+    const detail = j.error ? ` ${JSON.stringify(j.error).slice(0, 500)}` : '';
+    const e = new Error(`Lark ${j.code}: ${j.msg || ''}${detail}`);
     e.code = j.code;
+    e.response = j;
     throw e;
   }
   return j;
@@ -145,9 +147,17 @@ export async function baseList(env, userToken, table, cfg) {
 export async function baseCreate(env, userToken, table, records, cfg) {
   const ids = [];
   for (let i = 0; i < records.length; i += 100) {
-    const j = await larkFetch(userToken, 'POST', basePath(env, cfg, table, '/batch_create'),
-      { body: { create_records: records.slice(i, i + 100) } });
-    ids.push(...((j.data || {}).record_id_list || []));
+    const batch = records.slice(i, i + 100);
+    try {
+      const j = await larkFetch(userToken, 'POST',
+        `/open-apis/bitable/v1/apps/${cfgBaseToken(env, cfg)}/tables/${table}/records/batch_create`,
+        { body: { records: batch.map(fields => ({ fields })) } });
+      ids.push(...(((j.data || {}).records || []).map(r => r.record_id).filter(Boolean)));
+    } catch (e) {
+      const j = await larkFetch(userToken, 'POST', basePath(env, cfg, table, '/batch_create'),
+        { body: { create_records: batch.map(fields => ({ fields })) } });
+      ids.push(...((j.data || {}).record_id_list || []));
+    }
   }
   return ids;
 }
