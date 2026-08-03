@@ -1,0 +1,115 @@
+// open_id 解決の安全化を検証する（Lark には接続せず、client を mock する）
+//   実行: node --test worker/test/
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createService } from '../src/service.js';
+
+const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 'tblA', csv: 'tblC' };
+
+/**
+ * @param members 台帳のメンバー行
+ * @param emailToOpen batch_get_id が返す「メール → 現アプリ open_id」
+ * @param aliveOpenIds users/batch で有効と確認できる open_id
+ * @param failLookup true なら batch_get_id が例外を投げる（スコープ不足の再現）
+ */
+function mockClient({ members, emailToOpen = {}, aliveOpenIds = [], failLookup = false }) {
+  const calls = [];
+  return {
+    calls,
+    tables: TABLES,
+    nowStr: () => '2026-07-29 12:00:00',
+    baseUrl: () => 'https://example.test/base',
+    fetchTable: async (t) => (t === TABLES.member ? members : []),
+    baseCreate: async () => ['recNEW'],
+    baseUpsert: async () => ({}),
+    baseDelete: async () => ({}),
+    contactCall: async (method, path, data, params) => {
+      calls.push({ method, path, data, params });
+      if (path.includes('/users/batch_get_id')) {
+        if (failLookup) throw new Error('Lark 99991679: missing scope');
+        const list = (data.emails || [])
+          .filter(e => emailToOpen[e.toLowerCase()])
+          .map(e => ({ email: e, user_id: emailToOpen[e.toLowerCase()] }));
+        return { code: 0, data: { user_list: list } };
+      }
+      if (path.includes('/users/batch')) {
+        const ids = [].concat(params.user_ids || []);
+        return { code: 0, data: { items: ids.filter(id => aliveOpenIds.includes(id)).map(id => ({ open_id: id })) } };
+      }
+      return { code: 0, data: {} };
+    }
+  };
+}
+
+/** 役職だけ変える最小の op（メンバー1名を参照する） */
+const memberUpdateOp = (openId, recId) => ({
+  opType: 'MEMBER_UPDATE', objType: 'メンバー', targetName: 'テスト太郎',
+  targetOpenId: openId, targetRecId: recId, newTitle: '課長'
+});
+
+test('メールで現アプリの open_id に解決できる場合、新しい open_id で書き込む', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' }
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1')], dryRun: true });
+
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.unresolvedMembers, [], '未解決は無いはず');
+  const patch = r.ops.find(o => o.method === 'PATCH');
+  assert.ok(patch.path.includes('ou_NEW'), `新 open_id を使うべき: ${patch.path}`);
+});
+
+test('メールが無くても、台帳の open_id が現アプリで有効なら使う', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '佐藤', メールアドレス: '', open_id: 'ou_SAME' }],
+    aliveOpenIds: ['ou_SAME']
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_SAME', 'rec1')], dryRun: true });
+
+  assert.deepEqual(r.unresolvedMembers, []);
+  assert.ok(r.ops.find(o => o.method === 'PATCH').path.includes('ou_SAME'));
+});
+
+test('メールが無く open_id も無効なら、書き込まずに失敗させる（旧IDを送らない）', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '鈴木', メールアドレス: '', open_id: 'ou_STALE' }],
+    aliveOpenIds: []   // 別アプリ由来 → 現アプリでは無効
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_STALE', 'rec1')], dryRun: true });
+
+  assert.equal(r.results[0].ok, false, 'op は失敗しているべき');
+  assert.match(r.results[0].error, /特定できませんでした/);
+  assert.equal(r.unresolvedMembers.length, 1);
+  assert.equal(r.unresolvedMembers[0].name, '鈴木');
+  assert.equal(r.ops.filter(o => o.method === 'PATCH').length, 0, '旧 open_id で書き込んではいけない');
+});
+
+test('batch_get_id が失敗しても握り潰さず lookupErrors に残す', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '高橋', メールアドレス: 'takahashi@example.com', open_id: 'ou_X' }],
+    failLookup: true,
+    aliveOpenIds: ['ou_X']   // 照会は失敗したが台帳の ID は有効
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_X', 'rec1')], dryRun: true });
+
+  assert.ok(r.lookupErrors.length > 0, '照会失敗を記録するべき');
+  assert.match(r.lookupErrors[0], /missing scope/);
+  assert.deepEqual(r.unresolvedMembers, [], '台帳の ID が有効なら実行はできる');
+});
+
+test('部門だけの op はメンバー照会を必要としない', async () => {
+  const client = mockClient({ members: [] });
+  const svc = createService(client);
+  const r = await svc.execute({
+    ops: [{ opType: 'DEPT_RENAME', objType: '部門', targetName: '旧名', newName: '新名', targetOpenId: 'od-1' }],
+    dryRun: true
+  });
+  assert.equal(r.results[0].ok, true);
+  assert.deepEqual(r.unresolvedMembers, []);
+  assert.equal(client.calls.filter(c => c.path.includes('batch_get_id')).length, 0);
+});

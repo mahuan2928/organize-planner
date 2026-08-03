@@ -21,6 +21,24 @@ export function createService(client) {
   const contactPatch = (apiPath, data, params) => contactCall('PATCH', apiPath, data, params);
   const linkIds = (v) => Array.isArray(v) ? v.map(x => x && x.id).filter(Boolean) : [];
   const sel = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
+  const chunksOf = (items, size) => {
+    const out = [];
+    for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+    return out;
+  };
+  async function mapLimit(items, limit, fn) {
+    const out = [];
+    let next = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      for (;;) {
+        const idx = next++;
+        if (idx >= items.length) return;
+        out[idx] = await fn(items[idx], idx);
+      }
+    });
+    await Promise.all(workers);
+    return out;
+  }
 
   // ---- テナント名（scope 未付与ならフォールバック）----
   let tenantNameCache = null;
@@ -36,8 +54,8 @@ export function createService(client) {
 
   async function contactUsersBatch(openIds) {
     const map = {};
-    for (let i = 0; i < openIds.length; i += 50) {
-      const chunk = openIds.slice(i, i + 50);
+    const chunks = chunksOf([...new Set((openIds || []).map(x => String(x || '').trim()).filter(Boolean))], 50);
+    await mapLimit(chunks, 4, async (chunk) => {
       try {
         const j = await contactCall('GET', '/open-apis/contact/v3/users/batch', null,
           { user_ids: chunk, user_id_type: 'open_id', department_id_type: 'open_department_id' });
@@ -52,13 +70,13 @@ export function createService(client) {
           };
         });
       } catch (_) { /* best-effort */ }
-    }
+    });
     return map;
   }
   async function contactDeptsBatch(openDeptIds) {
     const map = {};
-    for (let i = 0; i < openDeptIds.length; i += 50) {
-      const chunk = openDeptIds.slice(i, i + 50);
+    const chunks = chunksOf([...new Set((openDeptIds || []).map(x => String(x || '').trim()).filter(Boolean))], 50);
+    await mapLimit(chunks, 4, async (chunk) => {
       try {
         const j = await contactCall('GET', '/open-apis/contact/v3/departments/batch', null,
           { department_ids: chunk, department_id_type: 'open_department_id', user_id_type: 'open_id' });
@@ -72,7 +90,7 @@ export function createService(client) {
           };
         });
       } catch (_) { /* best-effort */ }
-    }
+    });
     return map;
   }
 
@@ -180,9 +198,13 @@ export function createService(client) {
     } catch (e) { throw e; }
   }
 
+  // メールから現アプリの open_id を引く。open_id はアプリごとの名前空間なので、
+  // 台帳に保存された open_id が別アプリ由来だと書き戻しに使えない。
+  // 照会に失敗したかどうかを呼び出し側が判定できるよう、握り潰さず errors を返す。
   async function batchGetOpenIdsByEmail(emails) {
-    const uniq = [...new Set((emails || []).map(x => String(x || '').trim()).filter(Boolean))];
+    const uniq = [...new Set((emails || []).map(x => String(x || '').trim().toLowerCase()).filter(Boolean))];
     const out = {};
+    const errors = [];
     for (let i = 0; i < uniq.length; i += 50) {
       const chunk = uniq.slice(i, i + 50);
       try {
@@ -194,39 +216,99 @@ export function createService(client) {
           const id = u.user_id || u.open_id;
           if (email && id) out[email] = id;
         });
-      } catch (_) { /* best-effort: fallback to original open_id */ }
+      } catch (e) {
+        errors.push(String((e && e.message) || e));
+      }
     }
-    return out;
+    return { map: out, errors };
   }
 
+  /** 台帳の open_id が現アプリで有効かを一括確認（有効な open_id の Set を返す） */
+  async function verifyOpenIds(openIds) {
+    const uniq = [...new Set((openIds || []).map(x => String(x || '').trim()).filter(Boolean))];
+    const alive = new Set();
+    for (let i = 0; i < uniq.length; i += 50) {
+      const chunk = uniq.slice(i, i + 50);
+      try {
+        const j = await contactCall('GET', '/open-apis/contact/v3/users/batch', null,
+          { user_ids: chunk, user_id_type: 'open_id' });
+        ((j.data && j.data.items) || []).forEach(u => { if (u.open_id) alive.add(u.open_id); });
+      } catch (_) { /* 確認できなかった分は未解決として扱う（安全側） */ }
+    }
+    return alive;
+  }
+
+  /**
+   * 台帳の open_id → 現アプリの open_id へ解決する仕組みを作る。
+   * ① メールがあれば batch_get_id で現アプリの open_id を引く（最も確実）
+   * ② メールが無い／引けなかった場合は、台帳の open_id が現アプリで有効かを確認する
+   * ③ どちらも駄目なら「未解決」として記録し、書き戻しをブロックする
+   *    （以前は古い open_id をそのまま送っていたため、原因不明のエラーになっていた）
+   * @returns {{ resolve: (oldOpen, recId) => string, unresolved: Array, lookupErrors: Array }}
+   */
   async function buildAppOpenResolver(todo) {
     const memberRows = await fetchTable(T_MEM).catch(() => []);
-    const recEmail = new Map();
-    const openEmail = new Map();
+    const recEmail = new Map();     // recordId -> email
+    const openEmail = new Map();    // 台帳の open_id -> email
+    const openName = new Map();     // 台帳の open_id -> 氏名（エラー文で誰か分かるように）
+    const recName = new Map();      // recordId -> 氏名
     memberRows.forEach(r => {
+      const name = String(r['氏名'] || '').trim();
+      const oldOpen = String(r['open_id'] || '').trim();
+      if (r.record_id && name) recName.set(r.record_id, name);
+      if (oldOpen && name) openName.set(oldOpen, name);
       const email = String(r['メールアドレス'] || '').trim().toLowerCase();
       if (!email) return;
       if (r.record_id) recEmail.set(r.record_id, email);
-      const oldOpen = String(r['open_id'] || '').trim();
       if (oldOpen) openEmail.set(oldOpen, email);
     });
-    const wantedEmails = new Set();
+
+    // 今回の op で参照されるメンバーだけを対象にする（全件照会は無駄なので）
+    const refs = [];   // {oldOpen, recId}
     (todo || []).forEach(o => {
-      [o.targetRecId, o.newLeaderRecId, o.leaderRecId, o.handoverRecId].forEach(id => {
-        const email = id && recEmail.get(id);
-        if (email) wantedEmails.add(email);
-      });
-      [o.targetOpenId, o.newLeaderOpenId, o.leaderOpenId, o.handoverOpenId, ...(o.addDeputyOpenIds || []), ...(o.removeDeputyOpenIds || [])].forEach(id => {
-        const email = id && openEmail.get(id);
-        if (email) wantedEmails.add(email);
-      });
+      const add = (oldOpen, recId) => { if (oldOpen || recId) refs.push({ oldOpen: oldOpen || '', recId: recId || '' }); };
+      add(o.objType === 'メンバー' ? o.targetOpenId : '', o.objType === 'メンバー' ? o.targetRecId : '');
+      add(o.newLeaderOpenId, o.newLeaderRecId);
+      add(o.leaderOpenId, o.leaderRecId);
+      add(o.handoverOpenId, o.handoverRecId);
+      (o.addDeputyOpenIds || []).forEach(id => add(id, ''));
+      (o.removeDeputyOpenIds || []).forEach(id => add(id, ''));
     });
-    const emailOpen = await batchGetOpenIdsByEmail([...wantedEmails]);
-    return (oldOpen, recId) => {
+
+    const wantedEmails = new Set();
+    refs.forEach(({ oldOpen, recId }) => {
       const email = (recId && recEmail.get(recId)) || (oldOpen && openEmail.get(oldOpen));
-      return (email && emailOpen[email]) || oldOpen;
+      if (email) wantedEmails.add(email);
+    });
+    const { map: emailOpen, errors: lookupErrors } = await batchGetOpenIdsByEmail([...wantedEmails]);
+
+    const emailOf = (oldOpen, recId) => (recId && recEmail.get(recId)) || (oldOpen && openEmail.get(oldOpen)) || '';
+    // メール経由で解決できなかった分は、台帳の open_id が現アプリで通用するか確認する
+    const needVerify = refs
+      .filter(({ oldOpen, recId }) => oldOpen && !isTmpId(oldOpen) && !emailOpen[emailOf(oldOpen, recId)])
+      .map(x => x.oldOpen);
+    const verified = needVerify.length ? await verifyOpenIds(needVerify) : new Set();
+
+    const unresolved = [];   // {name, reason}
+    const seenBad = new Set();
+    const resolve = (oldOpen, recId) => {
+      const email = emailOf(oldOpen, recId);
+      const byEmail = email && emailOpen[email];
+      if (byEmail) return byEmail;
+      if (oldOpen && verified.has(oldOpen)) return oldOpen;   // 台帳の ID がそのまま通用する
+      const key = oldOpen || recId;
+      if (key && !seenBad.has(key)) {
+        seenBad.add(key);
+        unresolved.push({
+          name: recName.get(recId) || openName.get(oldOpen) || '(氏名不明)',
+          reason: email ? 'メールアドレスで照会できませんでした' : 'メールアドレスが台帳に未登録です'
+        });
+      }
+      return '';   // 未解決＝空文字。呼び出し側でブロックする
     };
+    return { resolve, unresolved, lookupErrors };
   }
+  const isTmpId = (v) => typeof v === 'string' && (v.startsWith('new|') || v.startsWith('newm|'));
 
   async function execute(body) {
     try {
@@ -254,10 +336,17 @@ export function createService(client) {
       const rOpen = (v) => isTmp(v) ? (created[v] && created[v].openId) : v;
       const rRec = (v) => isTmp(v) ? (created[v] && created[v].recId) : v;
       const appOpen = await buildAppOpenResolver(todo);
-      const rMemberOpen = (openId, recId) => {
+      // 未解決のメンバーは「古い open_id で書き込む」のではなく明示的に失敗させる。
+      // 別アプリ由来の open_id を送っても Lark 側で原因不明のエラーになるだけで、実行者が対処できない。
+      const rMemberOpen = (openId, recId, label) => {
         if (!openId) return '';
         if (isTmp(openId)) return rOpen(openId);
-        return appOpen(openId, recId);
+        const resolved = appOpen.resolve(openId, recId);
+        if (!resolved) {
+          const who = (appOpen.unresolved.find(u => u.name !== '(氏名不明)') || {}).name || '';
+          throw new Error(`${label || 'メンバー'}を Lark 上で特定できませんでした${who ? `（${who} など）` : ''}。台帳のメールアドレスをご確認ください。`);
+        }
+        return resolved;
       };
       for (const o of todo) {
         let ok = false, error = '';
@@ -292,12 +381,12 @@ export function createService(client) {
             // → アプリが認識しない副（権限範囲外＝アンマップ）は removeDep に載らないため温存される。
             const tgtOpen = rOpen(o.targetOpenId);
             if (isTmp(o.targetOpenId) && !tgtOpen) throw new Error('対象部門（新規）が未作成のため実行できません');
-            const mainOpen = o.newLeaderOpenId ? rMemberOpen(o.newLeaderOpenId, o.newLeaderRecId) : '';
+            const mainOpen = o.newLeaderOpenId ? rMemberOpen(o.newLeaderOpenId, o.newLeaderRecId, '責任者') : '';
             if (o.newLeaderOpenId && isTmp(o.newLeaderOpenId) && !mainOpen) throw new Error('責任者（新規メンバー）が未作成のため実行できません');
             let data;
             if (mainOpen) {
-              const addDep = (o.addDeputyOpenIds || []).map(id => rMemberOpen(id)).filter(Boolean);
-              const removeDep = new Set((o.removeDeputyOpenIds || []).map(id => rMemberOpen(id)).filter(Boolean));
+              const addDep = (o.addDeputyOpenIds || []).map(id => rMemberOpen(id, '', '副責任者')).filter(Boolean);
+              const removeDep = new Set((o.removeDeputyOpenIds || []).map(id => rMemberOpen(id, '', '副責任者')).filter(Boolean));
               let existing = [];
               if (!isTmp(o.targetOpenId)) {   // 新規部門は既存 leaders なし
                 try {
@@ -329,7 +418,7 @@ export function createService(client) {
             if (o.email) data.email = o.email;
             if (o.title) data.job_title = o.title;
             if (o.leaderOpenId) {
-              const lo = rMemberOpen(o.leaderOpenId, o.leaderRecId);
+              const lo = rMemberOpen(o.leaderOpenId, o.leaderRecId, '上長');
               if (isTmp(o.leaderOpenId) && !lo) throw new Error('上長（新規メンバー）が未作成のため実行できません');
               data.leader_user_id = lo;
             }
@@ -348,11 +437,11 @@ export function createService(client) {
             const data = {};
             if ('newTitle' in o) data.job_title = o.newTitle;
             if ('newLeaderOpenId' in o) {
-              const lo = rMemberOpen(o.newLeaderOpenId, o.newLeaderRecId);
+              const lo = rMemberOpen(o.newLeaderOpenId, o.newLeaderRecId, '責任者');
               if (isTmp(o.newLeaderOpenId) && !lo) throw new Error('上長（新規メンバー）が未作成のため実行できません');
               data.leader_user_id = lo;
             }
-            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId, '対象メンバー');
             await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               data, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_UPDATE ${o.targetName}`);
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
@@ -360,7 +449,7 @@ export function createService(client) {
             // ユーザーのライブ orders/department_ids を取得し、全部門を保持したまま対象部門の order を最大化（隠れ部門の脱落防止）。
             const primOpen = rOpen(o.primaryDeptOpenId);
             if (isTmp(o.primaryDeptOpenId) && !primOpen) throw new Error('主部門（新規）が未作成のため実行できません');
-            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId, '対象メンバー');
             const g = await contactCall('GET', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               null, { user_id_type: 'open_id', department_id_type: 'open_department_id' });
             const u = (g.data && g.data.user) || {};
@@ -383,14 +472,14 @@ export function createService(client) {
             // 資源引継(handover): 引継先が指定されていれば、グループ/ドキュメント/カレンダー/アプリ等を移管してから削除
             let body = null;
             if (o.handoverOpenId) {
-              const h = rMemberOpen(o.handoverOpenId, o.handoverRecId);
+              const h = rMemberOpen(o.handoverOpenId, o.handoverRecId, '引継先');
               if (h) body = {
                 department_chat_acceptor_user_id: h, external_chat_acceptor_user_id: h,
                 docs_acceptor_user_id: h, calendar_acceptor_user_id: h,
                 application_acceptor_user_id: h, minutes_acceptor_user_id: h, survey_acceptor_user_id: h
               };
             }
-            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId, '対象メンバー');
             await sendOrRecord('DELETE', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               body, { user_id_type: 'open_id' }, `MEMBER_DELETE ${o.targetName}`);
           } else {
@@ -407,7 +496,7 @@ export function createService(client) {
             // 異動元はスナップショット既存部門のみ（同一計画内の新規部門になることはない）→ tmp 解決不要
             const fromOpen = (o.fromOpenIds || []).map(rOpen).filter(Boolean);
             const removed = new Set(fromOpen.filter(d => !toSet.has(d)));   // アプリ認識かつ異動先に無い＝今回外す部門
-            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId);
+            const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId, '対象メンバー');
             const g = await contactCall('GET', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               null, { user_id_type: 'open_id', department_id_type: 'open_department_id' });
             const u = (g.data && g.data.user) || {};
@@ -477,7 +566,11 @@ export function createService(client) {
         results.push({ opRecId: o.opRecId, name: o.targetName, type: o.opType, ok, error });
       }
       // dry-run: Base/監査への書き込みは一切せず、構築した Contact リクエストのみ返す
-      if (isDry) return __ok({ ok: true, dryRun: true, count: dryOps.length, ops: dryOps, results });
+      // dry-run では「Lark 上で特定できないメンバー」も返す → 実行前に画面で警告できる
+      if (isDry) return __ok({
+        ok: true, dryRun: true, count: dryOps.length, ops: dryOps, results,
+        unresolvedMembers: appOpen.unresolved, lookupErrors: appOpen.lookupErrors
+      });
       // 影響部門の メンバー数 を Contact の実数でリフレッシュ（best-effort）
       for (const [oid, rid] of touchedDepts) {
         try {
@@ -501,7 +594,10 @@ export function createService(client) {
         await baseCreate(T_AUDIT, ['詳細', '日時', 'アクション', '結果', '関連計画'],
           [[`実行: ${success}件成功 / ${fail}件失敗\n${actorLine}${detailLines.join('\n')}`, nowStr(), '実行', fail === 0 ? '成功' : '失敗', planRecId ? [{ id: planRecId }] : null]]);
       } catch (_) {}
-      return __ok({ ok: true, results, success, fail, planStatus });
+      return __ok({
+        ok: true, results, success, fail, planStatus,
+        unresolvedMembers: appOpen.unresolved   // 失敗した op の原因追跡用
+      });
     } catch (e) { throw e; }
   }
 

@@ -8,6 +8,7 @@ const ROOT_ID = '__root__';
 const ORPHAN_ID = '__orphan__';   // 仮想ノード: 部門未設定（無所属）メンバーの受け皿（編集対象外）
 
 let chart = null;
+let classifyTimer = 0;
 let BASE_URL = '';   // Base 台帳の URL（サーバー設定から取得。テナント固有値をコードに持たない）
 let COMPACT = true;
 // 表示密度: simple=部門のみ / full=部門+全メンバー（全員が独立ノード）。新規ユーザーは simple で始める
@@ -732,7 +733,8 @@ function render() {
     .render();
   if (typeof updateFocusBar === 'function') updateFocusBar();   // 集中バーを状態に同期
   requestAnimationFrame(classifyLinks);                         // 連線を関係別にスタイル分け（部門/帰属/汇报）
-  setTimeout(classifyLinks, 450);                               // トランジション後にも再適用
+  clearTimeout(classifyTimer);
+  classifyTimer = setTimeout(classifyLinks, 450);               // トランジション後にも最後の1回だけ再適用
   const startMode = SIMPLE && !FOCUS;                           // スタート画面（選んで始める）
   const sp = $('startPanel');
   if (sp) { sp.hidden = !startMode; if (startMode) renderStartPanel($('sp-search') ? $('sp-search').value : ''); }
@@ -2508,17 +2510,31 @@ async function doSave() {
     renderDiff();
   } catch (e) { setAct('予約プランの作成に失敗しました: ' + (e.message || e), true); logHist('プラン作成失敗', String((e && e.message) || e)); }
 }
-function confirmExec(limit) {
+async function confirmExec(limit) {
   const start = PLAN.doneCount || 0;                       // 実行済み件数（部分実行のカーソル）
   const n = limit || (PLAN.execOps.length - start);
   const batch = PLAN.execOps.slice(start, start + n);
   const del = batch.filter(o => o.deleteFlag).length;
   const depts = new Set(batch.filter(o => o.objType === '部門').map(o => o.targetName)).size;
   const mems = new Set(batch.filter(o => o.objType === 'メンバー').map(o => o.targetName)).size;
+  // 確定前に dry-run で下見し、Lark 上で特定できないメンバーを洗い出す（実行して初めて失敗するのを避ける）
+  let preflight = '';
+  try {
+    setAct('実行内容を確認しています…');
+    const pre = await postJSON('/api/execute', { planRecId: PLAN.planRecId, ops: batch, dryRun: true });
+    const bad = (pre && pre.unresolvedMembers) || [];
+    if (bad.length) {
+      const names = bad.slice(0, 5).map(x => esc(x.name)).join('、');
+      preflight = `<div class="act-note act-err"><b>Lark 上で特定できないメンバーが ${bad.length} 名います</b>（${names}${bad.length > 5 ? ' ほか' : ''}）。
+        該当する変更は実行時に失敗します。台帳のメールアドレスをご確認ください。</div>`;
+    }
+    renderActions();
+  } catch (_) { renderActions(); /* 下見に失敗しても確認自体は続行する */ }
   openConfirm({
     title: '予約の確定',
     body:
       `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・予約はすべて未反映でした。</div>
+       ${preflight}
        <div class="cfm-grid">
          <div><span class="cfm-num">${n}</span><span class="cfm-lbl">実行する変更</span></div>
          <div><span class="cfm-num">${depts}</span><span class="cfm-lbl">対象部門</span></div>
@@ -3350,7 +3366,7 @@ $('csv-file').addEventListener('change', async (e) => {
 });
 
 load();
-loadEmpTypes();   // 雇用形態 enum を先読み（メンバー追加モーダルを開く前にセレクトを用意）
-showSession();    // 本番: ログイン中のユーザー名とログアウトを表示
+const runIdle = window.requestIdleCallback || ((fn) => setTimeout(fn, 250));
+runIdle(showSession);    // 本番: ログイン中のユーザー名とログアウトを表示
 initOnboarding();
 initReviewEmptyActions();
