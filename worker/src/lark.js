@@ -182,12 +182,12 @@ export async function baseListFields(env, userToken, table, cfg) {
   const baseToken = cfgBaseToken(env, cfg);
   const normalize = (j) => (j.data && (j.data.items || j.data.fields)) || [];
   try {
-    const j = await larkFetch(userToken, 'GET', `/open-apis/base/v3/bases/${baseToken}/tables/${table}/fields`, { params: { page_size: 100 } });
-    return normalize(j);
-  } catch (_) {
     const j = await larkFetch(userToken, 'GET', `/open-apis/bitable/v1/apps/${baseToken}/tables/${table}/fields`, { params: { page_size: 100 } });
-    return normalize(j);
-  }
+    const items = normalize(j);
+    if (items.length) return items;
+  } catch (_) { /* try base v3 */ }
+  const j = await larkFetch(userToken, 'GET', `/open-apis/base/v3/bases/${baseToken}/tables/${table}/fields`, { params: { page_size: 100 } });
+  return normalize(j);
 }
 
 export async function resolveChatGroupsTable(env, userToken, cfg) {
