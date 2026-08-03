@@ -10,7 +10,8 @@ export function defaultTenantConfig(env) {
       op: env.T_OP || '',
       audit: env.T_AUDIT || '',
       csv: env.T_CSV || '',
-      chat: env.T_CHAT || ''
+      chat: env.T_CHAT || '',
+      role: env.T_ROLE || ''
     },
     features: {
       chatGroup: true,

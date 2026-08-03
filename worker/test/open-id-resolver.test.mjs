@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createService } from '../src/service.js';
 
-const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 'tblA', csv: 'tblC', chat: 'tblChat' };
+const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 'tblA', csv: 'tblC', chat: 'tblChat', role: 'tblRole' };
 
 /**
  * @param members 台帳のメンバー行
@@ -12,7 +12,7 @@ const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 
  * @param aliveOpenIds users/batch で有効と確認できる open_id
  * @param failLookup true なら batch_get_id が例外を投げる（スコープ不足の再現）
  */
-function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false, failChatTable = false }) {
+function mockClient({ members, chatRows = [], roleRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false, failChatTable = false }) {
   const calls = [];
   return {
     calls,
@@ -23,6 +23,7 @@ function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [
       if (t === TABLES.member) return members;
       if (t === TABLES.chat && failChatTable) throw new Error('Base table permission denied');
       if (t === TABLES.chat) return chatRows;
+      if (t === TABLES.role) return roleRows;
       return [];
     },
     baseCreate: async () => ['recNEW'],
@@ -251,4 +252,21 @@ test('予約プラン保存は日付をミリ秒、リンクをrecord_id配列�
   assert.deepEqual(opCall.data[0]['関連計画'], ['rec_created_0']);
   assert.deepEqual(opCall.data[0]['対象メンバー'], ['rec_member_1']);
   assert.equal('対象部門' in opCall.data[0], false);
+});
+
+test('役職候補は役職マスタを優先し、メンバー実値を補完する', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 役職: 'Presales Manager' }, { record_id: 'rec2', 役職: 'CSM' }],
+    roleRows: [
+      { record_id: 'role1', '役職名': 'Presales Manager', 'ステータス': '有効', '表示順': 2 },
+      { record_id: 'role2', '役職名': 'Account Executive', 'ステータス': '有効', '表示順': 1 }
+    ]
+  });
+  const svc = createService(client);
+  const r = await svc.getRoles();
+
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.items.map(x => x.name), ['Account Executive', 'Presales Manager', 'CSM']);
+  assert.equal(r.items.find(x => x.name === 'Presales Manager').source, '役職マスタ');
+  assert.equal(r.items.find(x => x.name === 'CSM').source, 'Lark実値');
 });

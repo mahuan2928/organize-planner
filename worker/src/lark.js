@@ -199,6 +199,15 @@ export async function resolveChatGroupsTable(env, userToken, cfg) {
   return (found && (found.table_id || found.id)) || '';
 }
 
+export async function resolveRoleMasterTable(env, userToken, cfg) {
+  const configured = cfg && cfg.tables && cfg.tables.role;
+  if (configured) return configured;
+  const tables = await baseListTables(env, userToken, cfg);
+  const names = new Set(['役職マスタ', '役職マスター', '職位マスタ', 'Role Master']);
+  const found = tables.find(t => names.has(t.name || t.table_name));
+  return (found && (found.table_id || found.id)) || '';
+}
+
 /** 1件更新 */
 export async function baseUpdate(env, userToken, table, recordId, fields, cfg) {
   return larkFetch(userToken, 'PATCH', basePath(env, cfg, table, `/${recordId}`), { body: fields });

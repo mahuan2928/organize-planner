@@ -19,7 +19,7 @@ const __ok = (x) => x;   // 旧 res.json(...) を戻り値に変換するため�
  */
 export function createService(client) {
   const { fetchTable, baseCreate, baseCreateRecords, baseUpsert, baseDelete, contactCall, baseUrl, nowStr, chatAddMembers, chatRemoveMembers } = client;
-  const { dept: T_DEPT, member: T_MEM, plan: T_PLAN, op: T_OP, audit: T_AUDIT, csv: T_CSV, chat: T_CHAT } = client.tables;
+  const { dept: T_DEPT, member: T_MEM, plan: T_PLAN, op: T_OP, audit: T_AUDIT, csv: T_CSV, chat: T_CHAT, role: T_ROLE } = client.tables;
   const contactPatch = (apiPath, data, params) => contactCall('PATCH', apiPath, data, params);
   const linkIds = (v) => Array.isArray(v) ? v.map(x => x && x.id).filter(Boolean) : [];
   const sel = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
@@ -244,6 +244,41 @@ export function createService(client) {
         base: baseUrl()
       });
     }
+  }
+
+  async function getRoles() {
+    const byKey = new Map();
+    const addRole = ({ name, status = '有効', source = 'Lark実値', order = 9999, description = '', recordId = '' }) => {
+      const roleName = cellText(name).trim();
+      if (!roleName) return;
+      const key = normRole(roleName);
+      const existing = byKey.get(key);
+      if (!existing || source === '役職マスタ') {
+        byKey.set(key, {
+          name: roleName,
+          status: cellText(status) || '有効',
+          source,
+          order: Number(order) || 9999,
+          description: cellText(description),
+          recordId
+        });
+      }
+    };
+    if (T_ROLE) {
+      const rows = await fetchTable(T_ROLE).catch(() => []);
+      rows.forEach(r => addRole({
+        name: r['役職名'] || r['名称'] || r['名前'] || r['Name'],
+        status: r['ステータス'] || r['状態'] || '有効',
+        source: '役職マスタ',
+        order: r['表示順'],
+        description: r['説明'] || r['備考'] || '',
+        recordId: r.record_id || ''
+      }));
+    }
+    const members = await fetchTable(T_MEM).catch(() => []);
+    members.forEach(r => addRole({ name: r['役職'], source: 'Lark実値', status: '候補' }));
+    const items = [...byKey.values()].sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name, 'ja'));
+    return __ok({ ok: true, source: T_ROLE ? 'role-master+lark-values' : 'lark-values', roleTable: T_ROLE || '', items });
   }
 
   async function savePlan(body) {
@@ -754,5 +789,5 @@ export function createService(client) {
     } catch (e) { return __ok({ ok: true, items: [{ value: '1', name: '正社員' }] }); }
   }
 
-  return { getOrg, savePlan, listPlans, execute, csvImport, employeeTypes, getTenantName };
+  return { getOrg, getRoles, savePlan, listPlans, execute, csvImport, employeeTypes, getTenantName };
 }

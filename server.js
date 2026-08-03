@@ -24,13 +24,13 @@ let CFG = loadConfig();
 // Base 未セットアップ = tables が揃っていない状態
 const isConfigured = () => !!(CFG && CFG.baseToken && CFG.tables && CFG.tables.dept && CFG.tables.member && CFG.tables.plan && CFG.tables.op && CFG.tables.audit);
 // 設定から派生する参照（既存コードの定数名を維持したまま config 駆動に）
-let PROFILE, BASE, T_DEPT, T_MEM, T_PLAN, T_OP, T_AUDIT, T_CSV;
+let PROFILE, BASE, T_DEPT, T_MEM, T_PLAN, T_OP, T_AUDIT, T_CSV, T_ROLE;
 function refreshRefs() {
   PROFILE = (CFG && CFG.profile) || 'lark-intl';
   BASE = (CFG && CFG.baseToken) || '';
   const t = (CFG && CFG.tables) || {};
   T_DEPT = t.dept || ''; T_MEM = t.member || ''; T_PLAN = t.plan || '';
-  T_OP = t.op || ''; T_AUDIT = t.audit || ''; T_CSV = t.csv || '';
+  T_OP = t.op || ''; T_AUDIT = t.audit || ''; T_CSV = t.csv || ''; T_ROLE = t.role || '';
 }
 refreshRefs();
 const baseUrl = (table) => `${(CFG && CFG.domain) || 'https://open.larksuite.com'}/base/${BASE}${table ? `?table=${table}` : ''}`;
@@ -70,6 +70,14 @@ async function fetchTable(tableId) {
 }
 const linkIds = (v) => Array.isArray(v) ? v.map(x => x && x.id).filter(Boolean) : [];
 const sel = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
+const cellText = (v) => {
+  if (v == null) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return v.map(cellText).filter(Boolean).join('、');
+  if (typeof v === 'object') return cellText(v.text || v.name || v.value || v.text_arr || v.link || v.id);
+  return '';
+};
+const normRole = (v) => cellText(v).normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
 
 function nowStr() { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
 
@@ -554,6 +562,45 @@ app.get('/api/capabilities', (_req, res) => {
     version: 'local',
     features: { chatgroupsCreate: false, roleChatSync: false, chatgroupBaseRecord: false }
   });
+});
+
+app.get('/api/roles', async (_req, res) => {
+  try {
+    const byKey = new Map();
+    const addRole = ({ name, status = '有効', source = 'Lark実値', order = 9999, description = '', recordId = '' }) => {
+      const roleName = cellText(name).trim();
+      if (!roleName) return;
+      const key = normRole(roleName);
+      const existing = byKey.get(key);
+      if (!existing || source === '役職マスタ') {
+        byKey.set(key, {
+          name: roleName,
+          status: cellText(status) || '有効',
+          source,
+          order: Number(order) || 9999,
+          description: cellText(description),
+          recordId
+        });
+      }
+    };
+    if (T_ROLE) {
+      const rows = await fetchTable(T_ROLE).catch(() => []);
+      rows.forEach(r => addRole({
+        name: r['役職名'] || r['名称'] || r['名前'] || r['Name'],
+        status: r['ステータス'] || r['状態'] || '有効',
+        source: '役職マスタ',
+        order: r['表示順'],
+        description: r['説明'] || r['備考'] || '',
+        recordId: r.record_id || ''
+      }));
+    }
+    const members = await fetchTable(T_MEM).catch(() => []);
+    members.forEach(r => addRole({ name: r['役職'], source: 'Lark実値', status: '候補' }));
+    const items = [...byKey.values()].sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name, 'ja'));
+    res.json({ ok: true, source: T_ROLE ? 'role-master+lark-values' : 'lark-values', roleTable: T_ROLE || '', items });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: String((e && e.message) || e) });
+  }
 });
 
 // セットアップ状態（config が揃っているか）: フロントの初回セットアップ画面判定用

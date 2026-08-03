@@ -207,12 +207,16 @@ export default {
         if (needsChatTable && !tenantConfig.tables.chat) {
           tenantConfig.tables.chat = await lark.resolveChatGroupsTable(env, s.userToken, tenantConfig).catch(() => '');
         }
+        if (path === '/api/roles' && !tenantConfig.tables.role) {
+          tenantConfig.tables.role = await lark.resolveRoleMasterTable(env, s.userToken, tenantConfig).catch(() => '');
+        }
         const svc = createService(makeClient(env, s.userToken, tenantConfig));
 
         if (path === '/api/org') {
           const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true';
           return json(await getOrgWithCache(env, ctx, svc, tenantConfig, force));
         }
+        if (path === '/api/roles') return json(await svc.getRoles());
         if (path === '/api/plans') return json(await svc.listPlans());
         if (path === '/api/employee-types') return json(await svc.employeeTypes());
         if (path === '/api/setup/status') {

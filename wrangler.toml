@@ -23,3 +23,4 @@ T_OP    = "tblj8R8wQ87UdHag"
 T_AUDIT = "tblmgQeM1ryWTQSb"
 T_CSV   = "tblef15Ay8BqI5pq"
 # T_CHAT  = "<チャットグループ履歴テーブルID>" # 手動作成した履歴テーブルIDを設定すると作成済みチャットグループを記録
+# T_ROLE  = "<役職マスタテーブルID>" # 任意。未設定時は「役職マスタ」を自動検出し、なければメンバー実値から候補を作成

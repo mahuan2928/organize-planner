@@ -946,7 +946,7 @@ function editDeptName(id) {
 }
 
 // メンバーカードをダブルクリック → その場で役職を編集（役職が空でも入力可）
-function startEditMemberTitle(card) {
+async function startEditMemberTitle(card) {
   const memId = card.dataset.mid;
   const m = MEMBERS.get(memId); if (!m || m.deleted) return;
   const idEl = card.querySelector('.oc-id');
@@ -955,15 +955,20 @@ function startEditMemberTitle(card) {
   const old = m.title || '';
   let sub = idEl.querySelector('.oc-sub');
   if (!sub) { sub = document.createElement('div'); sub.className = 'oc-sub oc-msub'; idEl.appendChild(sub); }
-  sub.innerHTML = titleSelectHtml(old, 'oc-rename-input oc-title-input');
+  sub.innerHTML = titleSelectHtml(old, 'oc-rename-input oc-title-input', await loadRoleOptions());
   const inp = sub.querySelector('select');
   inp.focus();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
-    const val = (inp.value || '').trim();
+    let val = (inp.value || '').trim();
+    if (commit && val === '__custom__') {
+      const custom = window.prompt('新しい役職を入力してください', old);
+      val = custom == null ? old : custom.trim();
+    }
     if (commit && val !== old) {
       m.title = val;
+      if (val && ROLE_OPTIONS_CACHE && !ROLE_OPTIONS_CACHE.includes(val)) ROLE_OPTIONS_CACHE = [...ROLE_OPTIONS_CACHE, val].sort((a, b) => a.localeCompare(b, 'ja'));
       if (m.isNew) m.origTitle = val;   // 未保存の新規メンバーは作成内容を変えるだけ（更新opにしない）
       PLAN = null; markEdited();
       logHist('下書き編集', `「${m.name}」の役職 → ${val || '(なし)'}`);
@@ -986,6 +991,7 @@ function updateMemberTitleDraft(memId, nextTitle) {
   const val = String(nextTitle || '').trim();
   if (val === old) return false;
   m.title = val;
+  if (val && ROLE_OPTIONS_CACHE && !ROLE_OPTIONS_CACHE.includes(val)) ROLE_OPTIONS_CACHE = [...ROLE_OPTIONS_CACHE, val].sort((a, b) => a.localeCompare(b, 'ja'));
   if (m.isNew) m.origTitle = val;
   PLAN = null; markEdited();
   logHist('下書き編集', `「${m.name}」の役職 → ${val || '(なし)'}`);
@@ -1009,13 +1015,28 @@ function titleOptions() {
     .sort((a, b) => a.localeCompare(b, 'ja'));
 }
 
-function titleSelectHtml(currentValue, className = 'oc-rename-input dt-inline-input') {
+let ROLE_OPTIONS_CACHE = null;
+async function loadRoleOptions() {
+  if (ROLE_OPTIONS_CACHE) return ROLE_OPTIONS_CACHE;
+  try {
+    const r = await getJSON('/api/roles');
+    const apiItems = Array.isArray(r.items) ? r.items : [];
+    const names = apiItems.map(x => String(x.name || '').trim()).filter(Boolean);
+    ROLE_OPTIONS_CACHE = [...new Set([...names, ...titleOptions()])].sort((a, b) => a.localeCompare(b, 'ja'));
+  } catch (_) {
+    ROLE_OPTIONS_CACHE = titleOptions();
+  }
+  return ROLE_OPTIONS_CACHE;
+}
+
+function titleSelectHtml(currentValue, className = 'oc-rename-input dt-inline-input', options = titleOptions()) {
   const current = String(currentValue || '').trim();
-  const opts = titleOptions();
+  const opts = [...options];
   if (current && !opts.includes(current)) opts.unshift(current);
   return `<select class="${className}" aria-label="役職を選択">
     <option value="">役職なし</option>
     ${opts.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('')}
+    <option value="__custom__">手入力…</option>
   </select>`;
 }
 
@@ -1042,16 +1063,23 @@ function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', op
   inp.addEventListener('click', (e) => e.stopPropagation());
 }
 
-function startDetailSelectEdit(row, currentValue, onCommit) {
+async function startDetailSelectEdit(row, currentValue, onCommit) {
   const valEl = row.querySelector('.dt-val') || row;
   if (!valEl || valEl.querySelector('select')) return;
-  valEl.innerHTML = titleSelectHtml(currentValue);
+  valEl.innerHTML = titleSelectHtml(currentValue, 'oc-rename-input dt-inline-input', await loadRoleOptions());
   const selEl = valEl.querySelector('select');
   selEl.focus();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
-    if (commit) onCommit(selEl.value);
+    if (commit) {
+      let val = selEl.value;
+      if (val === '__custom__') {
+        const custom = window.prompt('新しい役職を入力してください', currentValue || '');
+        val = custom == null ? currentValue : custom.trim();
+      }
+      onCommit(val);
+    }
     else showDetail(SELECTED.kind, SELECTED.id);
   };
   selEl.addEventListener('change', () => finish(true));
