@@ -156,6 +156,27 @@ export function chatGroupsTable(cfgOrEnv) {
   return (cfgOrEnv && cfgOrEnv.tables && cfgOrEnv.tables.chat) || (cfgOrEnv && cfgOrEnv.T_CHAT) || '';
 }
 
+export async function baseListTables(env, userToken, cfg) {
+  const baseToken = cfgBaseToken(env, cfg);
+  const normalize = (j) => (j.data && (j.data.items || j.data.tables)) || [];
+  try {
+    const j = await larkFetch(userToken, 'GET', `/open-apis/base/v3/bases/${baseToken}/tables`, { params: { page_size: 100 } });
+    return normalize(j);
+  } catch (_) {
+    const j = await larkFetch(userToken, 'GET', `/open-apis/bitable/v1/apps/${baseToken}/tables`, { params: { page_size: 100 } });
+    return normalize(j);
+  }
+}
+
+export async function resolveChatGroupsTable(env, userToken, cfg) {
+  const configured = chatGroupsTable(cfg);
+  if (configured) return configured;
+  const tableName = 'チャットグループ管理';
+  const tables = await baseListTables(env, userToken, cfg);
+  const found = tables.find(t => (t.name || t.table_name) === tableName);
+  return (found && (found.table_id || found.id)) || '';
+}
+
 /** 1件更新 */
 export async function baseUpdate(env, userToken, table, recordId, fields, cfg) {
   return larkFetch(userToken, 'PATCH', basePath(env, cfg, table, `/${recordId}`), { body: fields });

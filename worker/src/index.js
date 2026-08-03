@@ -134,6 +134,9 @@ export default {
         if (gate.error) return gate.error;
         const s = gate.session;
         const tenantConfig = await getTenantConfig(env, s);
+        if (!tenantConfig.tables.chat) {
+          tenantConfig.tables.chat = await lark.resolveChatGroupsTable(env, s.userToken, tenantConfig).catch(() => '');
+        }
         const svc = createService(makeClient(env, s.userToken, tenantConfig));
 
         // 変更系は CSRF 対策（同一オリジンからのリクエストのみ許可）
@@ -203,7 +206,7 @@ export default {
                 'ステータス': '作成済み'
               }], tenantConfig);
             } else {
-              chatLogError = 'T_CHAT が未設定のため、チャットグループ履歴には記録していません。';
+              chatLogError = 'T_CHAT 未設定かつ「チャットグループ管理」テーブルを見つけられないため、Base には記録していません。';
             }
           } catch (e) {
             chatLogError = String((e && e.message) || e);

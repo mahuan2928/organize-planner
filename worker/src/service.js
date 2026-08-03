@@ -110,7 +110,9 @@ export function createService(client) {
     return map;
   }
   async function syncRoleChatMembership(roleChatMap, oldTitle, newTitle, userOpenId) {
-    if (!userOpenId || !roleChatMap || !T_CHAT || !chatAddMembers || !chatRemoveMembers) return '';
+    if (!userOpenId || !chatAddMembers || !chatRemoveMembers) return '';
+    if (!T_CHAT) return 'チャットグループ管理テーブルが未設定/未検出のため、役職チャットグループは同期していません。';
+    if (!roleChatMap) return '';
     const oldRole = normRole(oldTitle);
     const newRole = normRole(newTitle);
     if (oldRole === newRole) return '';
@@ -490,7 +492,7 @@ export function createService(client) {
               data, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_UPDATE ${o.targetName}`);
             if (!isDry && 'newTitle' in o) {
               chatSync = await syncRoleChatMembership(roleChatMap, o.oldTitle, o.newTitle, targetUserOpen);
-              if (/失敗/.test(chatSync)) error = chatSync;
+              if (/失敗|同期していません/.test(chatSync)) error = chatSync;
             }
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
             // 主部門の設定。Lark では is_primary_dept は書込不可（派生値）で、department_order が最大の部門が主部門。
