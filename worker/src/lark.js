@@ -97,15 +97,16 @@ export async function createChat(env, { name, description, openIds }) {
 
 // ---------------- Base 台帳: user_access_token（実行者の資格）----------------
 // 実測で確定したエンドポイント群（bitable/v1 ではなく base/v3 を使う）
-const basePath = (env, table, suffix = '') =>
-  `/open-apis/base/v3/bases/${env.BASE_TOKEN}/tables/${table}/records${suffix}`;
+const cfgBaseToken = (env, cfg) => (cfg && cfg.baseToken) || env.BASE_TOKEN;
+const basePath = (env, cfg, table, suffix = '') =>
+  `/open-apis/base/v3/bases/${cfgBaseToken(env, cfg)}/tables/${table}/records${suffix}`;
 
 /** 全レコード取得（offset ページング） */
-export async function baseList(env, userToken, table) {
+export async function baseList(env, userToken, table, cfg) {
   const out = [];
   let offset = 0;
   for (;;) {
-    const j = await larkFetch(userToken, 'GET', basePath(env, table), { params: { limit: 200, offset } });
+    const j = await larkFetch(userToken, 'GET', basePath(env, cfg, table), { params: { limit: 200, offset } });
     const d = j.data || {};
     const fields = d.fields || [];
     const ids = d.record_id_list || [];
@@ -123,39 +124,39 @@ export async function baseList(env, userToken, table) {
 }
 
 /** レコード作成（100件ずつ）→ record_id 配列 */
-export async function baseCreate(env, userToken, table, records) {
+export async function baseCreate(env, userToken, table, records, cfg) {
   const ids = [];
   for (let i = 0; i < records.length; i += 100) {
-    const j = await larkFetch(userToken, 'POST', basePath(env, table, '/batch_create'),
+    const j = await larkFetch(userToken, 'POST', basePath(env, cfg, table, '/batch_create'),
       { body: { create_records: records.slice(i, i + 100) } });
     ids.push(...((j.data || {}).record_id_list || []));
   }
   return ids;
 }
 
-export function chatGroupsTable(env) {
-  return env.T_CHAT || '';
+export function chatGroupsTable(cfgOrEnv) {
+  return (cfgOrEnv && cfgOrEnv.tables && cfgOrEnv.tables.chat) || (cfgOrEnv && cfgOrEnv.T_CHAT) || '';
 }
 
 /** 1件更新 */
-export async function baseUpdate(env, userToken, table, recordId, fields) {
-  return larkFetch(userToken, 'PATCH', basePath(env, table, `/${recordId}`), { body: fields });
+export async function baseUpdate(env, userToken, table, recordId, fields, cfg) {
+  return larkFetch(userToken, 'PATCH', basePath(env, cfg, table, `/${recordId}`), { body: fields });
 }
 
 /** 一括更新（150件ずつ・API上限200） */
-export async function baseBatchUpdate(env, userToken, table, updates) {
+export async function baseBatchUpdate(env, userToken, table, updates, cfg) {
   const items = Object.entries(updates);
   for (let i = 0; i < items.length; i += 150) {
-    await larkFetch(userToken, 'POST', basePath(env, table, '/batch_update'),
+    await larkFetch(userToken, 'POST', basePath(env, cfg, table, '/batch_update'),
       { body: { update_records: Object.fromEntries(items.slice(i, i + 150)) } });
   }
 }
 
 /** 削除 */
-export async function baseDelete(env, userToken, table, recordIds) {
+export async function baseDelete(env, userToken, table, recordIds, cfg) {
   const ids = Array.isArray(recordIds) ? recordIds : [recordIds];
-  return larkFetch(userToken, 'POST', basePath(env, table, '/batch_delete'), { body: { record_id_list: ids } });
+  return larkFetch(userToken, 'POST', basePath(env, cfg, table, '/batch_delete'), { body: { record_id_list: ids } });
 }
 
-export const baseUrl = (env, table) =>
-  `${env.LARK_DOMAIN || OPEN}/base/${env.BASE_TOKEN}${table ? `?table=${table}` : ''}`;
+export const baseUrl = (env, table, cfg) =>
+  `${env.LARK_DOMAIN || OPEN}/base/${cfgBaseToken(env, cfg)}${table ? `?table=${table}` : ''}`;

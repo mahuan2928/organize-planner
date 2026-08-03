@@ -18,6 +18,7 @@ id = "<wrangler kv namespace create oganizer で作成したID>"
 LARK_APP_ID = "<Lark App ID。例: cli_xxxxxxxxxxxxxxxx>"
 LARK_DOMAIN = "https://<your-tenant>.jp.larksuite.com"
 TENANT_NAME_FALLBACK = "<組織名>"
+TENANT_KEY = "<租户标识，例如 default 或 lark-japan>"
 # Base（多維表格）のテーブルID
 T_DEPT  = "<部門テーブルID>"
 T_MEM   = "<メンバーテーブルID>"

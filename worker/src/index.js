@@ -5,6 +5,7 @@
 
 import { createService } from './service.js';
 import * as lark from './lark.js';
+import { getTenantConfig } from './tenant-config.js';
 import {
   buildLoginUrl, exchangeCode, fetchUserInfo, isTenantManager,
   createSession, getSession, destroySession, stateOk
@@ -27,28 +28,26 @@ const escapeHtml = (s) => String(s == null ? '' : s)
   .replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /** サービス層に渡すクライアント（Base=ユーザー資格 / Contact=bot 資格） */
-function makeClient(env, userToken) {
-  const tables = {
-    dept: env.T_DEPT, member: env.T_MEM, plan: env.T_PLAN,
-    op: env.T_OP, audit: env.T_AUDIT, csv: env.T_CSV
-  };
+function makeClient(env, userToken, tenantConfig) {
+  const tables = tenantConfig.tables;
   return {
     tables,
-    tenantNameFallback: env.TENANT_NAME_FALLBACK || 'テナント',
+    tenantKey: tenantConfig.tenantKey,
+    tenantNameFallback: tenantConfig.tenantName || 'テナント',
     nowStr: () => {
       // 日本時間で記録（台帳の見た目を既存と揃える）
       const d = new Date(Date.now() + 9 * 3600 * 1000);
       const p = n => String(n).padStart(2, '0');
       return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
     },
-    baseUrl: (table) => lark.baseUrl(env, table),
-    fetchTable: (table) => lark.baseList(env, userToken, table),
+    baseUrl: (table) => lark.baseUrl(env, table, tenantConfig),
+    fetchTable: (table) => lark.baseList(env, userToken, table, tenantConfig),
     baseCreate: (table, fields, rows) =>
       lark.baseCreate(env, userToken, table, rows.map(row =>
         Object.fromEntries(fields.map((f, i) => [f, row[i]]))
-      )),
-    baseUpsert: (table, recordId, patch) => lark.baseUpdate(env, userToken, table, recordId, patch),
-    baseDelete: (table, recordId) => lark.baseDelete(env, userToken, table, recordId),
+      ), tenantConfig),
+    baseUpsert: (table, recordId, patch) => lark.baseUpdate(env, userToken, table, recordId, patch, tenantConfig),
+    baseDelete: (table, recordId) => lark.baseDelete(env, userToken, table, recordId, tenantConfig),
     contactCall: (method, path, data, params) => lark.contact(env, method, path, { body: data, params })
   };
 }
@@ -108,6 +107,7 @@ export default {
         }
         const { cookie } = await createSession(env, {
           openId, name: info.name || '', isAdmin: true,
+          tenantKey: env.TENANT_KEY || 'default',
           userToken, refreshToken: tok.refresh_token || '',
           tokenExpiresAt: Date.now() + ((tok.expires_in || 7200) - 300) * 1000
         });
@@ -121,7 +121,7 @@ export default {
 
       if (path === '/api/me') {
         const s = await getSession(env, req);
-        return json({ ok: true, loggedIn: !!s, name: s ? s.name : '', openId: s ? s.openId : '', isAdmin: !!(s && s.isAdmin) });
+        return json({ ok: true, loggedIn: !!s, name: s ? s.name : '', openId: s ? s.openId : '', isAdmin: !!(s && s.isAdmin), tenantKey: s ? (s.tenantKey || env.TENANT_KEY || 'default') : '' });
       }
 
       if (path === '/api/health') return json({ ok: true });
@@ -131,7 +131,8 @@ export default {
         const gate = await requireAdmin(env, req);
         if (gate.error) return gate.error;
         const s = gate.session;
-        const svc = createService(makeClient(env, s.userToken));
+        const tenantConfig = await getTenantConfig(env, s);
+        const svc = createService(makeClient(env, s.userToken, tenantConfig));
 
         // 変更系は CSRF 対策（同一オリジンからのリクエストのみ許可）
         if (req.method === 'POST') {
@@ -145,7 +146,14 @@ export default {
         if (path === '/api/plans') return json(await svc.listPlans());
         if (path === '/api/employee-types') return json(await svc.employeeTypes());
         if (path === '/api/setup/status') {
-          return json({ ok: true, configured: !!(env.BASE_TOKEN && env.T_DEPT), profile: 'worker', domain: env.LARK_DOMAIN || '', baseUrl: lark.baseUrl(env) });
+          return json({
+            ok: true,
+            configured: !!(tenantConfig.baseToken && tenantConfig.tables.dept),
+            profile: 'worker',
+            domain: env.LARK_DOMAIN || '',
+            tenantKey: tenantConfig.tenantKey,
+            baseUrl: lark.baseUrl(env, '', tenantConfig)
+          });
         }
         if (path === '/api/plan' && req.method === 'POST') return json(await svc.savePlan(body));
         if (path === '/api/csv-import' && req.method === 'POST') return json(await svc.csvImport(body));
@@ -177,7 +185,7 @@ export default {
           let chatTableId = '';
           let chatLogError = '';
           try {
-            chatTableId = lark.chatGroupsTable(env);
+            chatTableId = lark.chatGroupsTable(tenantConfig);
             const source = (body && body.source) || {};
             const selectedNames = members.map(m => String((m && m.name) || '').trim()).filter(Boolean).join('、');
             if (chatTableId) {
@@ -191,7 +199,7 @@ export default {
                 '作成者 open_id': s.openId || '',
                 '作成日時': new Date().toISOString(),
                 'ステータス': '作成済み'
-              }]);
+              }], tenantConfig);
             } else {
               chatLogError = 'T_CHAT が未設定のため、チャットグループ履歴には記録していません。';
             }
