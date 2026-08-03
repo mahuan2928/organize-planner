@@ -967,7 +967,7 @@ async function startEditMemberTitle(card) {
   const old = m.title || '';
   let sub = idEl.querySelector('.oc-sub');
   if (!sub) { sub = document.createElement('div'); sub.className = 'oc-sub oc-msub'; idEl.appendChild(sub); }
-  sub.innerHTML = titleSelectHtml(old, 'oc-rename-input oc-title-input', await loadRoleOptions());
+  sub.innerHTML = titleSelectHtml(old, 'role-select oc-title-input', await loadRoleOptions());
   const inp = sub.querySelector('select');
   inp.focus();
   let done = false;
@@ -1067,11 +1067,15 @@ async function loadRoleOptions() {
   return ROLE_OPTIONS_CACHE;
 }
 
-function rolePickerHelpHtml(compact = false) {
+function rolePickerHelpHtml(compact = false, id = '') {
   const master = ROLE_OPTIONS_META.roleUrl
     ? `<a href="${esc(ROLE_OPTIONS_META.roleUrl)}" target="_blank" rel="noopener noreferrer">役職マスタを開く ↗</a>`
-    : '役職マスタ未設定のため、現在の Lark 実値から候補を作成しています。';
-  return `<div class="role-help ${compact ? 'compact' : ''}">候補は「役職マスタ」と現在の Lark 実値から作成します。正式な候補は役職マスタで管理します。${master}<br>手入力した役職は自動では役職マスタに追加されません。</div>`;
+    : '<span class="role-help-muted">役職マスタ未設定</span>';
+  return `<div class="role-help ${compact ? 'compact' : ''}"${id ? ` id="${esc(id)}"` : ''}>
+    <span>候補: 役職マスタ + Lark 実値</span>
+    ${master}
+    <span>手入力はマスタに追加されません。</span>
+  </div>`;
 }
 
 function optionLabel(opt) {
@@ -1080,7 +1084,7 @@ function optionLabel(opt) {
   return `${opt.name}（${tag}${status}）`;
 }
 
-function titleSelectHtml(currentValue, className = 'oc-rename-input dt-inline-input', options = titleOptions()) {
+function titleSelectHtml(currentValue, className = 'role-select', options = titleOptions(), describedBy = '', id = '') {
   const current = String(currentValue || '').trim();
   const opts = mergeRoleOptions(options.map(o => typeof o === 'string' ? roleOption(o) : o));
   if (current && !opts.some(o => roleKey(o.name) === roleKey(current))) opts.unshift(roleOption(current, '現在値', '現在値'));
@@ -1090,7 +1094,7 @@ function titleSelectHtml(currentValue, className = 'oc-rename-input dt-inline-in
     ['現在 Lark で使用中', opts.filter(o => o.source !== '役職マスタ' && o.source !== '現在値' && !isDeprecated(o))],
     ['現在値・非推奨', opts.filter(o => o.source === '現在値' || isDeprecated(o))]
   ].filter(([, list]) => list.length);
-  return `<select class="${className}" aria-label="役職を選択">
+  return `<select${id ? ` id="${esc(id)}"` : ''} class="${className}" aria-label="役職を選択"${describedBy ? ` aria-describedby="${esc(describedBy)}"` : ''}>
     <option value="">役職なし</option>
     ${groups.map(([label, list]) => `<optgroup label="${esc(label)}">${list.map(o => `<option value="${esc(o.name)}"${roleKey(o.name) === roleKey(current) ? ' selected' : ''} title="${esc(o.description || '')}">${esc(optionLabel(o))}</option>`).join('')}</optgroup>`).join('')}
     <option value="__custom__">手入力…（役職マスタには追加されません）</option>
@@ -1127,7 +1131,8 @@ function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', op
 async function startDetailSelectEdit(row, currentValue, onCommit) {
   const valEl = row.querySelector('.dt-val') || row;
   if (!valEl || valEl.querySelector('select')) return;
-  valEl.innerHTML = `${titleSelectHtml(currentValue, 'oc-rename-input dt-inline-input', await loadRoleOptions())}${rolePickerHelpHtml(true)}`;
+  const helpId = `role-help-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  valEl.innerHTML = `${titleSelectHtml(currentValue, 'role-select dt-role-select', await loadRoleOptions(), helpId)}${rolePickerHelpHtml(true, helpId)}`;
   const selEl = valEl.querySelector('select');
   selEl.focus();
   let done = false;
@@ -1555,6 +1560,7 @@ function renderJobChatModal() {
     document.body.appendChild(overlay);
   }
   const defaultName = `${String(JOB_CHAT_FILTER || '役職').trim()}チャットグループ`;
+  const roleHelpId = 'jobChatRoleHelp';
   overlay.innerHTML = `
     <div class="jc-modal" role="dialog" aria-modal="true" aria-labelledby="jc-title">
       <div class="jc-head">
@@ -1565,7 +1571,7 @@ function renderJobChatModal() {
         <button id="jobChatClose" class="jc-close" type="button" aria-label="閉じる">×</button>
       </div>
       <div class="jc-controls">
-        <label class="jc-field"><span>役職</span>${titleSelectHtml(JOB_CHAT_FILTER, '', ROLE_OPTIONS_CACHE || titleOptions()).replace('<select class=""', '<select id="jobChatFilter" class=""')}${rolePickerHelpHtml(true)}</label>
+        <label class="jc-field jc-role-field"><span>役職</span>${titleSelectHtml(JOB_CHAT_FILTER, 'role-select jc-role-select', ROLE_OPTIONS_CACHE || titleOptions(), roleHelpId, 'jobChatFilter')}${rolePickerHelpHtml(true, roleHelpId)}</label>
         <label class="jc-field jc-name"><span>チャットグループ名</span><input id="jobChatName" type="text" value="${esc(defaultName)}" placeholder="チャットグループ名"></label>
       </div>
       <div id="jobChatPreview"></div>
