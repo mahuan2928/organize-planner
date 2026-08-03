@@ -915,6 +915,36 @@ function startRenameDept(card) {
   inp.addEventListener('dragstart', (e) => e.preventDefault());
 }
 
+function renameDeptDraft(id, nextName) {
+  const n = NODES.find(x => x.id === id);
+  if (!n || n.type !== 'dept' || n.deleted) return false;
+  const old = n.deptName;
+  const val = String(nextName || '').trim();
+  if (!val) { showToast('部門名を入力してください', true); return false; }
+  if (val === old) return false;
+  if (NODES.some(x => x.type === 'dept' && !x.deleted && x.id !== id && x.deptName === val)) {
+    showToast(`「${val}」は既に存在します`, true);
+    return false;
+  }
+  n.deptName = val; n.name = val; n.avatarChar = initials(val);
+  if (n.isNew) n.origName = val;
+  PLAN = null; markEdited();
+  logHist('下書き編集', `部門「${old}」を「${val}」に改名`);
+  render(); renderDiff(); showDetail('dept', id);
+  showToast(n.isNew ? `新規部門の名前を「${val}」にしました`
+    : val === n.origName ? `「${val}」に戻しました（変更なし）`
+    : `部門名の変更（${old} → ${val}）を下書きに追加しました。`);
+  return true;
+}
+
+function editDeptName(id) {
+  const n = NODES.find(x => x.id === id);
+  if (!n || n.type !== 'dept' || n.deleted) return;
+  const val = window.prompt('新しい部門名を入力してください', n.deptName);
+  if (val == null) return;
+  renameDeptDraft(id, val);
+}
+
 // メンバーカードをダブルクリック → その場で役職を編集（役職が空でも入力可）
 function startEditMemberTitle(card) {
   const memId = card.dataset.mid;
@@ -946,6 +976,29 @@ function startEditMemberTitle(card) {
   inp.addEventListener('mousedown', (e) => e.stopPropagation());
   inp.addEventListener('click', (e) => e.stopPropagation());
   inp.addEventListener('dragstart', (e) => e.preventDefault());
+}
+
+function updateMemberTitleDraft(memId, nextTitle) {
+  const m = MEMBERS.get(memId);
+  if (!m || m.deleted) return false;
+  const old = m.title || '';
+  const val = String(nextTitle || '').trim();
+  if (val === old) return false;
+  m.title = val;
+  if (m.isNew) m.origTitle = val;
+  PLAN = null; markEdited();
+  logHist('下書き編集', `「${m.name}」の役職 → ${val || '(なし)'}`);
+  render(); renderDiff(); showDetail('member', memId);
+  showToast(`「${m.name}」の役職を「${val || 'なし'}」に変更する内容を下書きに追加しました。`);
+  return true;
+}
+
+function editMemberTitle(memId) {
+  const m = MEMBERS.get(memId);
+  if (!m || m.deleted) return;
+  const val = window.prompt('新しい役職を入力してください（空欄で役職なし）', m.title || '');
+  if (val == null) return;
+  updateMemberTitleDraft(memId, val);
 }
 
 // ================= 移動モード（クリック2ステップ・遠距離対応）=================
@@ -2890,7 +2943,7 @@ function showDetail(kind, id) {
       row('部門責任者', leader ? (esc(leader.name) + (leader.deptIds.has(n.id) ? '' : ' <span class="stchip st-gray">他部門所属</span>')) : '未設定') +
       row('部門人数', `${displayDeptHeadcount(id)} 名（表示中の子部門含む）`) + row('うち直属', `${deptDirectCount(id)} 名`) + row('子部門数', `${kids}`) +
       (n.path ? row('パス', esc(n.path)) : '') +
-      `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">組織図で表示</button></div>` +
+      `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">組織図で表示</button>${n.deleted ? '' : `<button class="di-btn" onclick="editDeptName('${id}')">部門名を変更…</button>`}</div>` +
       deptChildListHTML(id) +
       deptMemberListHTML(id);
   } else {
@@ -2904,7 +2957,7 @@ function showDetail(kind, id) {
       baRow('役職', m.origTitle || 'なし', m.title || 'なし') +
       baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし') +
       (m.email ? row('メール', esc(m.email)) : '') +
-      `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">組織図で表示</button>${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">異動…</button>`}</div>`;
+      `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">組織図で表示</button>${m.deleted ? '' : `<button class="di-btn" onclick="editMemberTitle('${id}')">役職を変更…</button>`}${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">異動…</button>`}</div>`;
   }
   switchTab('detail');
 }
