@@ -117,10 +117,11 @@ export function createService(client) {
     const map = new Map();
     rows.forEach(r => {
       const role = normRole(r['役職フィルター'] || r['役職'] || r['職位'] || r['职位']);
-      const chatId = cellText(r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID']).trim();
+      const groupNameValue = r['チャットグループ名'] || r['グループ名'] || r['群名'] || r['チャット名'] || r['名称'] || r['名前'] || r['Name'] || r['聊天群名称'] || r['群聊名称'];
+      const chatId = cellText(r['chat_id'] || r['チャットID'] || r['Chat ID'] || r['chatId'] || r['群ID'] || r['群聊ID'] || r['聊天群ID'] || groupNameValue).trim();
       if (!role || !chatId) return;
       if (!map.has(role)) map.set(role, []);
-      map.get(role).push({ chatId, name: cellText(r['チャットグループ名'] || r['グループ名'] || r['群名'] || r['チャット名'] || r['名称'] || r['名前'] || r['Name'] || r['聊天群名称'] || r['群聊名称']) || chatId });
+      map.get(role).push({ chatId, name: cellText(groupNameValue) || chatId });
     });
     return map;
   }

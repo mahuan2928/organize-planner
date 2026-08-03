@@ -186,6 +186,19 @@ test('旧役職と新役職が同じ chat_id を共有する場合、退出も�
   assert.equal(client.calls.filter(c => c.method === 'CHAT_ADD').length, 0);
 });
 
+test('チャットグループ名が group_chat 値の場合、その chat_id で同期する', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [{ record_id: 'chat1', '役職フィルター': '主任', 'チャットグループ名': ['oc_group_field'] }]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '' })] });
+
+  assert.equal(r.results[0].ok, true);
+  assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_group_field', data: ['ou_NEW'] });
+});
+
 test('チャットグループ管理テーブルを読めない場合、職位更新を成功扱いにしない', async () => {
   const client = mockClient({
     members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],

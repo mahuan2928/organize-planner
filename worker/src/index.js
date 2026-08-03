@@ -272,6 +272,7 @@ export default {
               const cellValue = (field, value) => {
                 const ui = String(field.ui_type || '').toLowerCase();
                 const type = Number(field.type || 0);
+                if (/group/.test(ui)) return [String(value || '').trim()].filter(Boolean);
                 if (/number/.test(ui) || type === 2) return Number(value) || 0;
                 if (/date/.test(ui) || type === 5) return Date.now();
                 if (/single/.test(ui) || type === 3) return String(value || '');
@@ -279,11 +280,13 @@ export default {
                 return String(value || '');
               };
               const record = {};
-              const put = (names, value) => {
+              const put = (names, value, groupValue = value) => {
                 const field = pick(...names);
-                if (field && isWritable(field)) record[field.field_name || field.name] = cellValue(field, value);
+                if (!field || !isWritable(field)) return;
+                const ui = String(field.ui_type || '').toLowerCase();
+                record[field.field_name || field.name] = cellValue(field, /group/.test(ui) ? groupValue : value);
               };
-              put(['チャットグループ名', 'グループ名', '群名', 'チャット名', '名称', '名前', 'Name', '聊天群名称', '群聊名称'], result.name || title);
+              put(['チャットグループ名', 'グループ名', '群名', 'チャット名', '名称', '名前', 'Name', '聊天群名称', '群聊名称'], result.name || title, result.chatId);
               put(['chat_id', 'チャットID', 'Chat ID', 'chatId', '群ID', '群聊ID', '聊天群ID'], result.chatId);
               put(['役職フィルター', '役職', '職位', '职位'], String(source.filterValue || '').trim());
               put(['招待人数', '人数', 'メンバー数', '成员数'], Math.max(0, ids.length - 1));
