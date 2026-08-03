@@ -95,6 +95,24 @@ export async function createChat(env, { name, description, openIds }) {
   };
 }
 
+export async function addChatMembers(env, chatId, openIds) {
+  const ids = [...new Set((openIds || []).filter(Boolean))];
+  if (!chatId || !ids.length) return { skipped: true };
+  return larkFetch(await tenantToken(env), 'POST', `/open-apis/im/v1/chats/${encodeURIComponent(chatId)}/members`, {
+    params: { member_id_type: 'open_id' },
+    body: { id_list: ids }
+  });
+}
+
+export async function removeChatMembers(env, chatId, openIds) {
+  const ids = [...new Set((openIds || []).filter(Boolean))];
+  if (!chatId || !ids.length) return { skipped: true };
+  return larkFetch(await tenantToken(env), 'DELETE', `/open-apis/im/v1/chats/${encodeURIComponent(chatId)}/members`, {
+    params: { member_id_type: 'open_id' },
+    body: { id_list: ids }
+  });
+}
+
 // ---------------- Base 台帳: user_access_token（実行者の資格）----------------
 // 実測で確定したエンドポイント群（bitable/v1 ではなく base/v3 を使う）
 const cfgBaseToken = (env, cfg) => (cfg && cfg.baseToken) || env.BASE_TOKEN;

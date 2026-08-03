@@ -2529,7 +2529,7 @@ function buildExecOps() {
     if (!memUpdated(m)) return;
     const parts = [];
     const op = { opType: 'MEMBER_UPDATE', objType: 'メンバー', targetName: m.name, targetOpenId: m.openId, targetRecId: m.id, fromName: '現状' };
-    if ((m.title || '') !== (m.origTitle || '')) { op.newTitle = m.title || ''; parts.push(`役職: ${m.title || 'なし'}`); }
+    if ((m.title || '') !== (m.origTitle || '')) { op.oldTitle = m.origTitle || ''; op.newTitle = m.title || ''; parts.push(`役職: ${m.title || 'なし'}`); }
     if ((m.leaderId || null) !== (m.origLeaderId || null)) {
       if (m.leaderId) {
         op.newLeaderOpenId = memRefOpen(m.leaderId); op.newLeaderRecId = m.leaderId;

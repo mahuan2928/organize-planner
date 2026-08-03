@@ -48,6 +48,8 @@ function makeClient(env, userToken, tenantConfig) {
       ), tenantConfig),
     baseUpsert: (table, recordId, patch) => lark.baseUpdate(env, userToken, table, recordId, patch, tenantConfig),
     baseDelete: (table, recordId) => lark.baseDelete(env, userToken, table, recordId, tenantConfig),
+    chatAddMembers: (chatId, openIds) => lark.addChatMembers(env, chatId, openIds),
+    chatRemoveMembers: (chatId, openIds) => lark.removeChatMembers(env, chatId, openIds),
     contactCall: (method, path, data, params) => lark.contact(env, method, path, { body: data, params })
   };
 }

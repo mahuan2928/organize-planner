@@ -11,16 +11,19 @@ const __ok = (x) => x;   // 旧 res.json(...) を戻り値に変換するため�
  *   baseUpsert(tableId, recordId, patch)      -> any
  *   baseDelete(tableId, recordId)             -> any
  *   contactCall(method, path, data, params)   -> Lark レスポンス（tenant token）
+ *   chatAddMembers(chatId, openIds)           -> any
+ *   chatRemoveMembers(chatId, openIds)        -> any
  *   baseUrl(tableId?)                         -> Base の URL
  *   nowStr()                                  -> "YYYY-MM-DD HH:MM:SS"
  *   tables: { dept, member, plan, op, audit, csv }
  */
 export function createService(client) {
-  const { fetchTable, baseCreate, baseUpsert, baseDelete, contactCall, baseUrl, nowStr } = client;
-  const { dept: T_DEPT, member: T_MEM, plan: T_PLAN, op: T_OP, audit: T_AUDIT, csv: T_CSV } = client.tables;
+  const { fetchTable, baseCreate, baseUpsert, baseDelete, contactCall, baseUrl, nowStr, chatAddMembers, chatRemoveMembers } = client;
+  const { dept: T_DEPT, member: T_MEM, plan: T_PLAN, op: T_OP, audit: T_AUDIT, csv: T_CSV, chat: T_CHAT } = client.tables;
   const contactPatch = (apiPath, data, params) => contactCall('PATCH', apiPath, data, params);
   const linkIds = (v) => Array.isArray(v) ? v.map(x => x && x.id).filter(Boolean) : [];
   const sel = (v) => Array.isArray(v) ? (v[0] || '') : (v || '');
+  const normRole = (v) => String(v || '').trim().toLowerCase();
   const chunksOf = (items, size) => {
     const out = [];
     for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -92,6 +95,45 @@ export function createService(client) {
       } catch (_) { /* best-effort */ }
     });
     return map;
+  }
+  async function getRoleChatMap() {
+    if (!T_CHAT) return new Map();
+    const rows = await fetchTable(T_CHAT).catch(() => []);
+    const map = new Map();
+    rows.forEach(r => {
+      const role = normRole(r['役職フィルター'] || r['役職'] || r['職位'] || r['职位']);
+      const chatId = String(r['chat_id'] || r['チャットID'] || r['Chat ID'] || '').trim();
+      if (!role || !chatId) return;
+      if (!map.has(role)) map.set(role, []);
+      map.get(role).push({ chatId, name: r['チャットグループ名'] || r['名前'] || chatId });
+    });
+    return map;
+  }
+  async function syncRoleChatMembership(roleChatMap, oldTitle, newTitle, userOpenId) {
+    if (!userOpenId || !roleChatMap || !T_CHAT || !chatAddMembers || !chatRemoveMembers) return '';
+    const oldRole = normRole(oldTitle);
+    const newRole = normRole(newTitle);
+    if (oldRole === newRole) return '';
+    const notes = [];
+    const oldGroups = oldRole ? (roleChatMap.get(oldRole) || []) : [];
+    const newGroups = newRole ? (roleChatMap.get(newRole) || []) : [];
+    for (const g of oldGroups) {
+      try {
+        await chatRemoveMembers(g.chatId, [userOpenId]);
+        notes.push(`旧役職グループ「${g.name}」から退出`);
+      } catch (e) {
+        notes.push(`旧役職グループ「${g.name}」退出失敗: ${String((e && e.message) || e)}`);
+      }
+    }
+    for (const g of newGroups) {
+      try {
+        await chatAddMembers(g.chatId, [userOpenId]);
+        notes.push(`新役職グループ「${g.name}」へ参加`);
+      } catch (e) {
+        notes.push(`新役職グループ「${g.name}」参加失敗: ${String((e && e.message) || e)}`);
+      }
+    }
+    return notes.join(' / ');
   }
 
   async function getOrg() {
@@ -348,8 +390,10 @@ export function createService(client) {
         }
         return resolved;
       };
+      const needsRoleChatSync = !isDry && todo.some(o => o.opType === 'MEMBER_UPDATE' && 'newTitle' in o);
+      const roleChatMap = needsRoleChatSync ? await getRoleChatMap() : new Map();
       for (const o of todo) {
-        let ok = false, error = '';
+        let ok = false, error = '', chatSync = '';
         try {
           if (o.opType === 'DEPT_CREATE') {
             const pOpen = rOpen(o.toOpenId);
@@ -444,6 +488,10 @@ export function createService(client) {
             const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId, '対象メンバー');
             await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               data, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_UPDATE ${o.targetName}`);
+            if (!isDry && 'newTitle' in o) {
+              chatSync = await syncRoleChatMembership(roleChatMap, o.oldTitle, o.newTitle, targetUserOpen);
+              if (/失敗/.test(chatSync)) error = chatSync;
+            }
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
             // 主部門の設定。Lark では is_primary_dept は書込不可（派生値）で、department_order が最大の部門が主部門。
             // ユーザーのライブ orders/department_ids を取得し、全部門を保持したまま対象部門の order を最大化（隠れ部門の脱落防止）。
@@ -563,7 +611,7 @@ export function createService(client) {
           ];
           pairs.forEach(([oid, rid]) => { if (oid && rid) touchedDepts.set(oid, rid); });
         }
-        results.push({ opRecId: o.opRecId, name: o.targetName, type: o.opType, ok, error });
+        results.push({ opRecId: o.opRecId, name: o.targetName, type: o.opType, ok, error, chatSync });
       }
       // dry-run: Base/監査への書き込みは一切せず、構築した Contact リクエストのみ返す
       // dry-run では「Lark 上で特定できないメンバー」も返す → 実行前に画面で警告できる

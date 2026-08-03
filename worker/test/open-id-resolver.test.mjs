@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createService } from '../src/service.js';
 
-const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 'tblA', csv: 'tblC' };
+const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 'tblA', csv: 'tblC', chat: 'tblChat' };
 
 /**
  * @param members 台帳のメンバー行
@@ -12,17 +12,23 @@ const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 
  * @param aliveOpenIds users/batch で有効と確認できる open_id
  * @param failLookup true なら batch_get_id が例外を投げる（スコープ不足の再現）
  */
-function mockClient({ members, emailToOpen = {}, aliveOpenIds = [], failLookup = false }) {
+function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false }) {
   const calls = [];
   return {
     calls,
     tables: TABLES,
     nowStr: () => '2026-07-29 12:00:00',
     baseUrl: () => 'https://example.test/base',
-    fetchTable: async (t) => (t === TABLES.member ? members : []),
+    fetchTable: async (t) => {
+      if (t === TABLES.member) return members;
+      if (t === TABLES.chat) return chatRows;
+      return [];
+    },
     baseCreate: async () => ['recNEW'],
     baseUpsert: async () => ({}),
     baseDelete: async () => ({}),
+    chatAddMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_ADD', path: chatId, data: openIds }); return {}; },
+    chatRemoveMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_REMOVE', path: chatId, data: openIds }); return {}; },
     contactCall: async (method, path, data, params) => {
       calls.push({ method, path, data, params });
       if (path.includes('/users/batch_get_id')) {
@@ -44,7 +50,7 @@ function mockClient({ members, emailToOpen = {}, aliveOpenIds = [], failLookup =
 /** 役職だけ変える最小の op（メンバー1名を参照する） */
 const memberUpdateOp = (openId, recId) => ({
   opType: 'MEMBER_UPDATE', objType: 'メンバー', targetName: 'テスト太郎',
-  targetOpenId: openId, targetRecId: recId, newTitle: '課長'
+  targetOpenId: openId, targetRecId: recId, oldTitle: '主任', newTitle: '課長'
 });
 
 test('メールで現アプリの open_id に解決できる場合、新しい open_id で書き込む', async () => {
@@ -112,4 +118,23 @@ test('部門だけの op はメンバー照会を必要としない', async () =
   assert.equal(r.results[0].ok, true);
   assert.deepEqual(r.unresolvedMembers, []);
   assert.equal(client.calls.filter(c => c.path.includes('batch_get_id')).length, 0);
+});
+
+test('役職変更時、旧役職グループから退出し新役職グループへ参加する', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [
+      { record_id: 'chat1', '役職フィルター': '主任', chat_id: 'oc_old', 'チャットグループ名': '主任チャット' },
+      { record_id: 'chat2', '役職フィルター': '課長', chat_id: 'oc_new', 'チャットグループ名': '課長チャット' }
+    ]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1')] });
+
+  assert.equal(r.results[0].ok, true);
+  assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_old', data: ['ou_NEW'] });
+  assert.deepEqual(client.calls.find(c => c.method === 'CHAT_ADD'), { method: 'CHAT_ADD', path: 'oc_new', data: ['ou_NEW'] });
+  assert.match(r.results[0].chatSync, /旧役職グループ/);
+  assert.match(r.results[0].chatSync, /新役職グループ/);
 });
