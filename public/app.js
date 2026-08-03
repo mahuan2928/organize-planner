@@ -1001,10 +1001,18 @@ function editMemberTitle(memId) {
   updateMemberTitleDraft(memId, val);
 }
 
-function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '') {
+function titleOptions() {
+  return [...new Set([...MEMBERS.values()]
+    .map(m => String(m.title || '').trim())
+    .filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'ja'));
+}
+
+function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', options = null) {
   const valEl = row.querySelector('.dt-val') || row;
   if (!valEl || valEl.querySelector('input')) return;
-  valEl.innerHTML = `<input class="oc-rename-input dt-inline-input" placeholder="${esc(placeholder)}" value="${esc(currentValue || '')}">`;
+  const listId = options ? `dl-${Date.now()}-${Math.random().toString(36).slice(2)}` : '';
+  valEl.innerHTML = `<input class="oc-rename-input dt-inline-input" placeholder="${esc(placeholder)}" value="${esc(currentValue || '')}"${listId ? ` list="${listId}"` : ''}>${listId ? `<datalist id="${listId}"><option value="">役職なし</option>${options.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>` : ''}`;
   const inp = valEl.querySelector('input');
   inp.focus(); inp.select();
   let done = false;
@@ -1034,7 +1042,7 @@ function startDetailMemberTitleEdit(row) {
   if (!SELECTED || SELECTED.kind !== 'member') return;
   const m = MEMBERS.get(SELECTED.id);
   if (!m || m.deleted) return;
-  startDetailInlineEdit(row, m.title || '', (val) => updateMemberTitleDraft(m.id, val), '役職を入力');
+  startDetailInlineEdit(row, m.title || '', (val) => updateMemberTitleDraft(m.id, val), '役職を選択または入力', titleOptions());
 }
 
 // ================= 移動モード（クリック2ステップ・遠距離対応）=================
