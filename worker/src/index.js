@@ -194,17 +194,25 @@ export default {
             const source = (body && body.source) || {};
             const selectedNames = members.map(m => String((m && m.name) || '').trim()).filter(Boolean).join('、');
             if (chatTableId) {
-              await lark.baseCreate(env, s.userToken, chatTableId, [{
-                'チャットグループ名': result.name || title,
-                'chat_id': result.chatId,
-                '役職フィルター': String(source.filterValue || ''),
-                '招待人数': Math.max(0, ids.length - 1),
-                '選択メンバー': selectedNames,
-                '作成者': s.name || '',
-                '作成者 open_id': s.openId || '',
-                '作成日時': new Date().toISOString(),
-                'ステータス': '作成済み'
-              }], tenantConfig);
+              const fields = await lark.baseListFields(env, s.userToken, chatTableId, tenantConfig).catch(() => []);
+              const fieldNames = new Set(fields.map(f => f.field_name || f.name).filter(Boolean));
+              const pick = (...names) => names.find(n => fieldNames.has(n));
+              const record = {};
+              const put = (names, value) => {
+                const key = pick(...names);
+                if (key) record[key] = value;
+              };
+              put(['チャットグループ名', 'グループ名', '群名', 'チャット名'], result.name || title);
+              put(['chat_id', 'チャットID', 'Chat ID', 'chatId'], result.chatId);
+              put(['役職フィルター', '役職', '職位', '职位'], String(source.filterValue || '').trim());
+              put(['招待人数', '人数', 'メンバー数', '成员数'], Math.max(0, ids.length - 1));
+              put(['選択メンバー', 'メンバー', '成员', '参加者'], selectedNames);
+              put(['作成者', '创建者'], s.name || '');
+              put(['作成者 open_id', '作成者open_id', 'creator_open_id'], s.openId || '');
+              put(['作成日時', '作成時間', '创建时间'], new Date().toISOString());
+              put(['ステータス', '状态'], '作成済み');
+              if (!Object.keys(record).length) throw new Error('書き込み可能な対応フィールドがありません');
+              await lark.baseCreate(env, s.userToken, chatTableId, [record], tenantConfig);
             } else {
               chatLogError = 'T_CHAT 未設定かつ「チャットグループ管理」テーブルを見つけられないため、Base には記録していません。';
             }

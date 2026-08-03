@@ -119,6 +119,8 @@ export function createService(client) {
     const notes = [];
     const oldGroups = oldRole ? (roleChatMap.get(oldRole) || []) : [];
     const newGroups = newRole ? (roleChatMap.get(newRole) || []) : [];
+    if (oldRole && !oldGroups.length) notes.push(`旧役職「${oldTitle}」のチャットグループ記録なし`);
+    if (newRole && !newGroups.length) notes.push(`新役職「${newTitle}」のチャットグループ記録なし`);
     for (const g of oldGroups) {
       try {
         await chatRemoveMembers(g.chatId, [userOpenId]);
