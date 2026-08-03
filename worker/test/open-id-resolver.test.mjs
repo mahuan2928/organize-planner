@@ -26,6 +26,10 @@ function mockClient({ members, chatRows = [], emailToOpen = {}, aliveOpenIds = [
       return [];
     },
     baseCreate: async () => ['recNEW'],
+    baseCreateRecords: async (table, records) => {
+      calls.push({ method: 'BASE_CREATE', path: table, data: records });
+      return records.map((_, i) => `rec_created_${i}`);
+    },
     baseUpsert: async () => ({}),
     baseDelete: async () => ({}),
     chatAddMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_ADD', path: chatId, data: openIds }); return {}; },
@@ -211,4 +215,27 @@ test('チャットグループ管理テーブルを読めない場合、職位�
   assert.equal(r.ok, false);
   assert.equal(r.results[0].ok, false);
   assert.match(r.results[0].error, /チャットグループ管理テーブルの読み取りに失敗/);
+});
+
+test('予約プラン保存は日付をミリ秒、リンクをrecord_id配列で書き込む', async () => {
+  const client = mockClient({ members: [] });
+  const svc = createService(client);
+  const r = await svc.savePlan({
+    name: 'テスト計画',
+    effectiveDate: '2026-08-03 10:20:30',
+    summary: 'summary',
+    operations: [{
+      order: 1, opType: 'MEMBER_UPDATE', objType: 'メンバー', targetName: '佐藤',
+      targetRecId: 'rec_member_1', fromName: '役職: A', toName: '役職: B',
+      beforeText: 'A', afterText: 'B'
+    }]
+  });
+  const planCall = client.calls.find(c => c.method === 'BASE_CREATE' && c.path === TABLES.plan);
+  const opCall = client.calls.find(c => c.method === 'BASE_CREATE' && c.path === TABLES.op);
+
+  assert.equal(r.ok, true);
+  assert.equal(typeof planCall.data[0]['発効日時'], 'number');
+  assert.deepEqual(opCall.data[0]['関連計画'], ['rec_created_0']);
+  assert.deepEqual(opCall.data[0]['対象メンバー'], ['rec_member_1']);
+  assert.equal('対象部門' in opCall.data[0], false);
 });

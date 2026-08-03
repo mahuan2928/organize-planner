@@ -18,7 +18,7 @@ const __ok = (x) => x;   // 旧 res.json(...) を戻り値に変換するため�
  *   tables: { dept, member, plan, op, audit, csv }
  */
 export function createService(client) {
-  const { fetchTable, baseCreate, baseUpsert, baseDelete, contactCall, baseUrl, nowStr, chatAddMembers, chatRemoveMembers } = client;
+  const { fetchTable, baseCreate, baseCreateRecords, baseUpsert, baseDelete, contactCall, baseUrl, nowStr, chatAddMembers, chatRemoveMembers } = client;
   const { dept: T_DEPT, member: T_MEM, plan: T_PLAN, op: T_OP, audit: T_AUDIT, csv: T_CSV, chat: T_CHAT } = client.tables;
   const contactPatch = (apiPath, data, params) => contactCall('PATCH', apiPath, data, params);
   const linkIds = (v) => Array.isArray(v) ? v.map(x => x && x.id).filter(Boolean) : [];
@@ -44,6 +44,15 @@ export function createService(client) {
     return cellText(v).trim();
   };
   const normRole = (v) => cellText(v).trim().toLowerCase();
+  const omitNil = (obj) => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== null));
+  const toBaseDateMs = (v) => {
+    if (v == null || v === '') return undefined;
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    const s = String(v).trim();
+    const t = Date.parse(s.includes('T') ? s : s.replace(' ', 'T'));
+    return Number.isFinite(t) ? t : undefined;
+  };
+  const linkRecordIds = (...ids) => ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
   const chunksOf = (items, size) => {
     const out = [];
     for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -234,22 +243,37 @@ export function createService(client) {
       // 実行ペイロード（execOps 全体）を保存 → 再読み込み後も計画一覧から再開できる
       let payload = '';
       try { payload = JSON.stringify(operations || []); } catch (_) { payload = ''; }
-      const planIds = await baseCreate(T_PLAN,
-        ['計画名', 'ステータス', '発効日時', '承認ステータス', '変更サマリー', '実行ペイロード'],
-        [[name || '組織変更', '予約済み', effectiveDate || null, '承認不要', summary || '', payload]]);
+      const createRecords = baseCreateRecords || ((table, records) => baseCreate(table, Object.keys(records[0] || {}), records.map(r => Object.values(r))));
+      const planIds = await createRecords(T_PLAN, [omitNil({
+        '計画名': name || '組織変更',
+        'ステータス': '予約済み',
+        '発効日時': toBaseDateMs(effectiveDate),
+        '承認ステータス': '承認不要',
+        '変更サマリー': summary || '',
+        '実行ペイロード': payload
+      })]);
       const planRecId = planIds[0];
       // 対象レコードへのリンク（既存オブジェクトのみ。新規 new|x / newm|x は実行時にバックフィル）
       const isReal = (id) => typeof id === 'string' && id.startsWith('rec');
-      const opRows = (operations || []).map((o, i) => [
-        [{ id: planRecId }], o.order != null ? o.order : (i + 1), o.opType, o.objType,
-        o.targetName, `${o.fromName} → ${o.toName}`, o.deleteFlag === true, '未実行',
-        o.beforeText || '', o.afterText || '',
-        (o.objType === '部門' && isReal(o.targetRecId)) ? [{ id: o.targetRecId }] : [],
-        (o.objType === 'メンバー' && isReal(o.targetRecId)) ? [{ id: o.targetRecId }] : []
-      ]);
-      const opRecIds = opRows.length ? await baseCreate(T_OP,
-        ['関連計画', '順番', 'オペレーション種別', '対象種別', '対象', '変更内容', '削除系フラグ', '実行ステータス',
-         '変更前', '変更後', '対象部門', '対象メンバー'], opRows) : [];
+      const opRows = (operations || []).map((o, i) => {
+        const deptLinks = (o.objType === '部門' && isReal(o.targetRecId)) ? linkRecordIds(o.targetRecId) : undefined;
+        const memberLinks = (o.objType === 'メンバー' && isReal(o.targetRecId)) ? linkRecordIds(o.targetRecId) : undefined;
+        return omitNil({
+          '関連計画': linkRecordIds(planRecId),
+          '順番': Number(o.order != null ? o.order : (i + 1)),
+          'オペレーション種別': o.opType || '',
+          '対象種別': o.objType || '',
+          '対象': o.targetName || '',
+          '変更内容': `${o.fromName || ''} → ${o.toName || ''}`,
+          '削除系フラグ': o.deleteFlag === true,
+          '実行ステータス': '未実行',
+          '変更前': o.beforeText || '',
+          '変更後': o.afterText || '',
+          '対象部門': deptLinks && deptLinks.length ? deptLinks : undefined,
+          '対象メンバー': memberLinks && memberLinks.length ? memberLinks : undefined
+        });
+      });
+      const opRecIds = opRows.length ? await createRecords(T_OP, opRows) : [];
       return __ok({ ok: true, planRecId, opRecIds, planUrl: baseUrl(T_PLAN) });
     } catch (e) { throw e; }
   }

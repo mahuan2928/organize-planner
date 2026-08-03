@@ -46,6 +46,7 @@ function makeClient(env, userToken, tenantConfig) {
       lark.baseCreate(env, userToken, table, rows.map(row =>
         Object.fromEntries(fields.map((f, i) => [f, row[i]]))
       ), tenantConfig),
+    baseCreateRecords: (table, records) => lark.baseCreate(env, userToken, table, records, tenantConfig),
     baseUpsert: (table, recordId, patch) => lark.baseUpdate(env, userToken, table, recordId, patch, tenantConfig),
     baseDelete: (table, recordId) => lark.baseDelete(env, userToken, table, recordId, tenantConfig),
     chatAddMembers: (chatId, openIds) => lark.addChatMembers(env, chatId, openIds),
