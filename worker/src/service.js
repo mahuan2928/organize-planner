@@ -258,7 +258,7 @@ export function createService(client) {
           name: roleName,
           status: cellText(status) || '有効',
           source,
-          order: Number(order) || 9999,
+          order: Number.isFinite(Number(order)) ? Number(order) : 9999,
           description: cellText(description),
           recordId
         });
@@ -278,7 +278,7 @@ export function createService(client) {
     const members = await fetchTable(T_MEM).catch(() => []);
     members.forEach(r => addRole({ name: r['役職'], source: 'Lark実値', status: '候補' }));
     const items = [...byKey.values()].sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name, 'ja'));
-    return __ok({ ok: true, source: T_ROLE ? 'role-master+lark-values' : 'lark-values', roleTable: T_ROLE || '', items });
+    return __ok({ ok: true, source: T_ROLE ? 'role-master+lark-values' : 'lark-values', roleTable: T_ROLE || '', roleUrl: T_ROLE ? baseUrl(T_ROLE) : '', items });
   }
 
   async function savePlan(body) {

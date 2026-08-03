@@ -975,12 +975,12 @@ async function startEditMemberTitle(card) {
     if (done) return; done = true;
     let val = (inp.value || '').trim();
     if (commit && val === '__custom__') {
-      const custom = window.prompt('新しい役職を入力してください', old);
+      const custom = promptCustomRole(old);
       val = custom == null ? old : custom.trim();
     }
     if (commit && val !== old) {
       m.title = val;
-      if (val && ROLE_OPTIONS_CACHE && !ROLE_OPTIONS_CACHE.includes(val)) ROLE_OPTIONS_CACHE = [...ROLE_OPTIONS_CACHE, val].sort((a, b) => a.localeCompare(b, 'ja'));
+      addRoleOptionToCache(val, '手入力', '未登録');
       if (m.isNew) m.origTitle = val;   // 未保存の新規メンバーは作成内容を変えるだけ（更新opにしない）
       PLAN = null; markEdited();
       logHist('下書き編集', `「${m.name}」の役職 → ${val || '(なし)'}`);
@@ -1003,7 +1003,7 @@ function updateMemberTitleDraft(memId, nextTitle) {
   const val = String(nextTitle || '').trim();
   if (val === old) return false;
   m.title = val;
-  if (val && ROLE_OPTIONS_CACHE && !ROLE_OPTIONS_CACHE.includes(val)) ROLE_OPTIONS_CACHE = [...ROLE_OPTIONS_CACHE, val].sort((a, b) => a.localeCompare(b, 'ja'));
+  addRoleOptionToCache(val, '手入力', '未登録');
   if (m.isNew) m.origTitle = val;
   PLAN = null; markEdited();
   logHist('下書き編集', `「${m.name}」の役職 → ${val || '(なし)'}`);
@@ -1028,28 +1028,77 @@ function titleOptions() {
 }
 
 let ROLE_OPTIONS_CACHE = null;
+let ROLE_OPTIONS_META = { roleTable: '', roleUrl: '', source: '' };
+function roleOption(name, source = 'Lark実値', status = '候補', description = '') {
+  return { name: String(name || '').trim(), source, status: String(status || ''), description: String(description || '') };
+}
+function roleKey(name) {
+  return String(name || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+function mergeRoleOptions(items) {
+  const byKey = new Map();
+  const put = (opt) => {
+    if (!opt.name) return;
+    const key = roleKey(opt.name);
+    const existing = byKey.get(key);
+    if (!existing || opt.source === '役職マスタ') byKey.set(key, opt);
+  };
+  items.forEach(put);
+  titleOptions().forEach(name => put(roleOption(name)));
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+}
+function addRoleOptionToCache(name, source = '手入力', status = '未登録') {
+  const roleName = String(name || '').trim();
+  if (!roleName || !ROLE_OPTIONS_CACHE) return;
+  if (ROLE_OPTIONS_CACHE.some(o => roleKey(o.name) === roleKey(roleName))) return;
+  ROLE_OPTIONS_CACHE = mergeRoleOptions([...ROLE_OPTIONS_CACHE, roleOption(roleName, source, status)]);
+}
 async function loadRoleOptions() {
   if (ROLE_OPTIONS_CACHE) return ROLE_OPTIONS_CACHE;
   try {
     const r = await getJSON('/api/roles');
     const apiItems = Array.isArray(r.items) ? r.items : [];
-    const names = apiItems.map(x => String(x.name || '').trim()).filter(Boolean);
-    ROLE_OPTIONS_CACHE = [...new Set([...names, ...titleOptions()])].sort((a, b) => a.localeCompare(b, 'ja'));
+    ROLE_OPTIONS_META = { roleTable: r.roleTable || '', roleUrl: r.roleUrl || '', source: r.source || '' };
+    ROLE_OPTIONS_CACHE = mergeRoleOptions(apiItems.map(x => roleOption(x.name, x.source, x.status, x.description)));
   } catch (_) {
-    ROLE_OPTIONS_CACHE = titleOptions();
+    ROLE_OPTIONS_META = { roleTable: '', roleUrl: '', source: 'fallback' };
+    ROLE_OPTIONS_CACHE = mergeRoleOptions([]);
   }
   return ROLE_OPTIONS_CACHE;
 }
 
+function rolePickerHelpHtml(compact = false) {
+  const master = ROLE_OPTIONS_META.roleUrl
+    ? `<a href="${esc(ROLE_OPTIONS_META.roleUrl)}" target="_blank" rel="noopener noreferrer">役職マスタを開く ↗</a>`
+    : '役職マスタ未設定のため、現在の Lark 実値から候補を作成しています。';
+  return `<div class="role-help ${compact ? 'compact' : ''}">候補は「役職マスタ」と現在の Lark 実値から作成します。正式な候補は役職マスタで管理します。${master}<br>手入力した役職は自動では役職マスタに追加されません。</div>`;
+}
+
+function optionLabel(opt) {
+  const tag = opt.source === '役職マスタ' ? '正式' : opt.source === '現在値' ? '現在値' : '使用中';
+  const status = opt.status && !['有効', '候補'].includes(opt.status) ? ` / ${opt.status}` : '';
+  return `${opt.name}（${tag}${status}）`;
+}
+
 function titleSelectHtml(currentValue, className = 'oc-rename-input dt-inline-input', options = titleOptions()) {
   const current = String(currentValue || '').trim();
-  const opts = [...options];
-  if (current && !opts.includes(current)) opts.unshift(current);
+  const opts = mergeRoleOptions(options.map(o => typeof o === 'string' ? roleOption(o) : o));
+  if (current && !opts.some(o => roleKey(o.name) === roleKey(current))) opts.unshift(roleOption(current, '現在値', '現在値'));
+  const isDeprecated = (o) => /無効|停止|廃止/.test(String(o.status || ''));
+  const groups = [
+    ['正式な役職（役職マスタ）', opts.filter(o => o.source === '役職マスタ' && !isDeprecated(o))],
+    ['現在 Lark で使用中', opts.filter(o => o.source !== '役職マスタ' && o.source !== '現在値' && !isDeprecated(o))],
+    ['現在値・非推奨', opts.filter(o => o.source === '現在値' || isDeprecated(o))]
+  ].filter(([, list]) => list.length);
   return `<select class="${className}" aria-label="役職を選択">
     <option value="">役職なし</option>
-    ${opts.map(v => `<option value="${esc(v)}"${v === current ? ' selected' : ''}>${esc(v)}</option>`).join('')}
-    <option value="__custom__">手入力…</option>
+    ${groups.map(([label, list]) => `<optgroup label="${esc(label)}">${list.map(o => `<option value="${esc(o.name)}"${roleKey(o.name) === roleKey(current) ? ' selected' : ''} title="${esc(o.description || '')}">${esc(optionLabel(o))}</option>`).join('')}</optgroup>`).join('')}
+    <option value="__custom__">手入力…（役職マスタには追加されません）</option>
   </select>`;
+}
+
+function promptCustomRole(currentValue = '') {
+  return window.prompt('新しい役職を入力してください。\\n※ 手入力した役職は自動では役職マスタに追加されません。正式候補にする場合は役職マスタで管理してください。', currentValue || '');
 }
 
 function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', options = null) {
@@ -1078,7 +1127,7 @@ function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', op
 async function startDetailSelectEdit(row, currentValue, onCommit) {
   const valEl = row.querySelector('.dt-val') || row;
   if (!valEl || valEl.querySelector('select')) return;
-  valEl.innerHTML = titleSelectHtml(currentValue, 'oc-rename-input dt-inline-input', await loadRoleOptions());
+  valEl.innerHTML = `${titleSelectHtml(currentValue, 'oc-rename-input dt-inline-input', await loadRoleOptions())}${rolePickerHelpHtml(true)}`;
   const selEl = valEl.querySelector('select');
   selEl.focus();
   let done = false;
@@ -1087,7 +1136,7 @@ async function startDetailSelectEdit(row, currentValue, onCommit) {
     if (commit) {
       let val = selEl.value;
       if (val === '__custom__') {
-        const custom = window.prompt('新しい役職を入力してください', currentValue || '');
+        const custom = promptCustomRole(currentValue || '');
         val = custom == null ? currentValue : custom.trim();
       }
       onCommit(val);
@@ -1478,7 +1527,7 @@ function renderJobChatPanel() {
     <section class="job-chat-entry">
       <div>
         <div class="jc-kicker">役職からチャットグループ作成</div>
-        <div class="jc-entry-title">役職マスタから選んだ同じ役職のメンバーを Lark チャットグループに招待します。</div>
+        <div class="jc-entry-title">選択した役職と完全一致するメンバーを Lark チャットグループに招待します。</div>
       </div>
       <button id="jobChatOpen" class="jc-open" type="button">チャットグループ作成</button>
       ${result}
@@ -1511,12 +1560,12 @@ function renderJobChatModal() {
       <div class="jc-head">
         <div>
           <div class="jc-kicker">役職からチャットグループ作成</div>
-          <div id="jc-title" class="jc-title">同じ役職のメンバーを Lark チャットグループに招待（精確一致）</div>
+          <div id="jc-title" class="jc-title">同じ役職のメンバーを Lark チャットグループに招待（完全一致）</div>
         </div>
         <button id="jobChatClose" class="jc-close" type="button" aria-label="閉じる">×</button>
       </div>
       <div class="jc-controls">
-        <label class="jc-field"><span>役職</span>${titleSelectHtml(JOB_CHAT_FILTER, '', ROLE_OPTIONS_CACHE || titleOptions()).replace('<select class=""', '<select id="jobChatFilter" class=""')}</label>
+        <label class="jc-field"><span>役職</span>${titleSelectHtml(JOB_CHAT_FILTER, '', ROLE_OPTIONS_CACHE || titleOptions()).replace('<select class=""', '<select id="jobChatFilter" class=""')}${rolePickerHelpHtml(true)}</label>
         <label class="jc-field jc-name"><span>チャットグループ名</span><input id="jobChatName" type="text" value="${esc(defaultName)}" placeholder="チャットグループ名"></label>
       </div>
       <div id="jobChatPreview"></div>
@@ -1532,7 +1581,7 @@ function renderJobChatModal() {
   if (input) {
     input.onchange = (e) => {
       if (e.target.value === '__custom__') {
-        const custom = window.prompt('役職を入力してください', JOB_CHAT_FILTER || '');
+        const custom = promptCustomRole(JOB_CHAT_FILTER || '');
         updateJobChatFilter(custom == null ? JOB_CHAT_FILTER : custom);
       } else updateJobChatFilter(e.target.value);
     };
