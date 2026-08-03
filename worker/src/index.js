@@ -54,6 +54,58 @@ function makeClient(env, userToken, tenantConfig) {
   };
 }
 
+const ORG_CACHE_FRESH_MS = 60 * 1000;
+const ORG_CACHE_STALE_MS = 10 * 60 * 1000;
+const orgCacheKey = (tenantConfig) =>
+  `org:snapshot:${tenantConfig.tenantKey || 'default'}:${tenantConfig.baseToken || 'base'}`;
+
+async function readOrgSnapshot(env, tenantConfig) {
+  if (!env.SESSIONS) return null;
+  const raw = await env.SESSIONS.get(orgCacheKey(tenantConfig)).catch(() => null);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+async function writeOrgSnapshot(env, tenantConfig, data) {
+  if (!env.SESSIONS || !data || data.ok === false) return;
+  await env.SESSIONS.put(orgCacheKey(tenantConfig), JSON.stringify({
+    generatedAt: Date.now(),
+    data
+  }), { expirationTtl: Math.ceil(ORG_CACHE_STALE_MS / 1000) }).catch(() => {});
+}
+
+async function clearOrgSnapshot(env, tenantConfig) {
+  if (!env.SESSIONS) return;
+  await env.SESSIONS.delete(orgCacheKey(tenantConfig)).catch(() => {});
+}
+
+async function refreshOrgSnapshot(env, svc, tenantConfig) {
+  const data = await svc.getOrg();
+  await writeOrgSnapshot(env, tenantConfig, data);
+  return data;
+}
+
+async function getOrgWithCache(env, ctx, svc, tenantConfig, force) {
+  if (force || !env.SESSIONS) {
+    const data = await refreshOrgSnapshot(env, svc, tenantConfig);
+    return { ...data, cacheStatus: force ? 'force' : 'miss', generatedAt: Date.now() };
+  }
+  const cached = await readOrgSnapshot(env, tenantConfig);
+  const now = Date.now();
+  if (cached && cached.data && cached.generatedAt) {
+    const age = now - cached.generatedAt;
+    if (age <= ORG_CACHE_FRESH_MS) {
+      return { ...cached.data, cacheStatus: 'hit', generatedAt: cached.generatedAt };
+    }
+    if (age <= ORG_CACHE_STALE_MS) {
+      if (ctx && ctx.waitUntil) ctx.waitUntil(refreshOrgSnapshot(env, svc, tenantConfig));
+      return { ...cached.data, cacheStatus: 'stale', generatedAt: cached.generatedAt, refreshing: true };
+    }
+  }
+  const data = await refreshOrgSnapshot(env, svc, tenantConfig);
+  return { ...data, cacheStatus: 'miss', generatedAt: Date.now() };
+}
+
 /** ログイン必須＋管理者必須。未ログインは 401、非管理者は 403 */
 async function requireAdmin(env, req) {
   const s = await getSession(env, req);
@@ -156,7 +208,10 @@ export default {
         }
         const svc = createService(makeClient(env, s.userToken, tenantConfig));
 
-        if (path === '/api/org') return json(await svc.getOrg());
+        if (path === '/api/org') {
+          const force = url.searchParams.get('force') === '1' || url.searchParams.get('force') === 'true';
+          return json(await getOrgWithCache(env, ctx, svc, tenantConfig, force));
+        }
         if (path === '/api/plans') return json(await svc.listPlans());
         if (path === '/api/employee-types') return json(await svc.employeeTypes());
         if (path === '/api/setup/status') {
@@ -170,7 +225,11 @@ export default {
           });
         }
         if (path === '/api/plan' && req.method === 'POST') return json(await svc.savePlan(body));
-        if (path === '/api/csv-import' && req.method === 'POST') return json(await svc.csvImport(body));
+        if (path === '/api/csv-import' && req.method === 'POST') {
+          const r = await svc.csvImport(body);
+          if (r && r.ok) await clearOrgSnapshot(env, tenantConfig);
+          return json(r);
+        }
         if (path === '/api/chatgroups/create' && req.method === 'POST') {
           const title = String((body && body.title) || '').trim();
           const memberOpenIds = Array.isArray(body && body.memberOpenIds) ? body.memberOpenIds : [];
@@ -246,6 +305,7 @@ export default {
         if (path === '/api/execute' && req.method === 'POST') {
           // 誰が実行したかをサービス層の監査ログへ渡す
           const r = await svc.execute({ ...body, __actor: `${s.name}（${s.openId}）` });
+          if (r && (r.success > 0 || r.fail > 0)) await clearOrgSnapshot(env, tenantConfig);
           return json(r);
         }
         return json({ ok: false, error: 'not found' }, 404);
