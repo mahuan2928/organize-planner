@@ -127,6 +127,12 @@ export default {
       }
 
       if (path === '/api/health') return json({ ok: true });
+      if (path === '/api/capabilities') return json({
+        ok: true,
+        profile: 'worker',
+        version: 'chatgroups-v2',
+        features: { chatgroupsCreate: true, roleChatSync: true, chatgroupBaseRecord: true }
+      });
 
       // ---------- API（全て管理者必須）----------
       if (path.startsWith('/api/')) {
@@ -134,10 +140,6 @@ export default {
         if (gate.error) return gate.error;
         const s = gate.session;
         const tenantConfig = await getTenantConfig(env, s);
-        if (!tenantConfig.tables.chat) {
-          tenantConfig.tables.chat = await lark.resolveChatGroupsTable(env, s.userToken, tenantConfig).catch(() => '');
-        }
-        const svc = createService(makeClient(env, s.userToken, tenantConfig));
 
         // 変更系は CSRF 対策（同一オリジンからのリクエストのみ許可）
         if (req.method === 'POST') {
@@ -146,6 +148,13 @@ export default {
         }
 
         const body = req.method === 'POST' ? await req.json().catch(() => ({})) : null;
+        const needsChatTable =
+          path === '/api/chatgroups/create' ||
+          (path === '/api/execute' && Array.isArray(body && body.ops) && body.ops.some(o => o && o.opType === 'MEMBER_UPDATE' && 'newTitle' in o));
+        if (needsChatTable && !tenantConfig.tables.chat) {
+          tenantConfig.tables.chat = await lark.resolveChatGroupsTable(env, s.userToken, tenantConfig).catch(() => '');
+        }
+        const svc = createService(makeClient(env, s.userToken, tenantConfig));
 
         if (path === '/api/org') return json(await svc.getOrg());
         if (path === '/api/plans') return json(await svc.listPlans());

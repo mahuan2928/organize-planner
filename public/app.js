@@ -1525,6 +1525,10 @@ async function createJobChatGroup() {
 async function doCreateJobChatGroup(name, withOpen) {
   JOB_CHAT_BUSY = true; JOB_CHAT_RESULT = null; renderJobChatPreview();
   try {
+    const cap = await getJSON('/api/capabilities');
+    if (!cap.ok || !cap.features || cap.features.chatgroupsCreate !== true) {
+      throw new Error(`現在接続中のバックエンドはチャットグループ作成に対応していません（profile: ${cap.profile || 'unknown'}）。最新の Worker をデプロイした URL で開いてください。`);
+    }
     const r = await postJSON('/api/chatgroups/create', {
       title: name,
       memberOpenIds: withOpen.map(m => m.openId),
@@ -1553,6 +1557,18 @@ function chatGroupErrorMessage(e) {
     return '作成できませんでした: メンバーIDをこのアプリ用に変換できませんでした。メールアドレスと Contact 権限を確認してください。（詳細: Lark 99992361）';
   }
   return `作成できませんでした: ${raw}`;
+}
+async function getJSON(url) {
+  const res = await fetch(url);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : {}; }
+  catch (_) {
+    const plain = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+    throw new Error(`API バージョン確認に失敗しました（HTTP ${res.status}）: ${plain || res.statusText}。最新の Worker がデプロイされた URL で開いてください。`);
+  }
+  if (!res.ok) throw new Error(data.error || `API バージョン確認に失敗しました（HTTP ${res.status}）`);
+  return data;
 }
 // ---- 一覧（アウトライン）: カラーアバター＋責任者チップ＋人数バッジ＋階層ガイド線 ----
 const CHEV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';

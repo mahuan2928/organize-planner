@@ -547,6 +547,15 @@ app.post('/api/chatgroups/create', async (_req, res) => {
   });
 });
 
+app.get('/api/capabilities', (_req, res) => {
+  res.json({
+    ok: true,
+    profile: 'local-server',
+    version: 'local',
+    features: { chatgroupsCreate: false, roleChatSync: false, chatgroupBaseRecord: false }
+  });
+});
+
 // セットアップ状態（config が揃っているか）: フロントの初回セットアップ画面判定用
 app.get('/api/setup/status', (req, res) => {
   res.json({ ok: true, configured: isConfigured(), profile: (CFG && CFG.profile) || null, domain: (CFG && CFG.domain) || null, baseUrl: BASE ? baseUrl() : null });
