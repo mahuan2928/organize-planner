@@ -2688,7 +2688,18 @@ async function execNow(limit) {
     }
   } catch (e) { setAct('実行に失敗しました: ' + (e.message || e), true); logHist('実行失敗', String((e && e.message) || e)); }
 }
-async function postJSON(url, body) { return (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json(); }
+async function postJSON(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : {}; }
+  catch (_) {
+    const plain = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 180);
+    throw new Error(`API が JSON ではなく HTML/テキストを返しました（HTTP ${res.status}）: ${plain || res.statusText}`);
+  }
+  if (!res.ok && data && !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
 function nowLocal() { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
 function nowLocalInput() { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
 function setAct(msg, err) { $('diff-actions').innerHTML = `<div class="act-note ${err ? 'act-err' : ''}">${esc(msg)}</div>`; }
