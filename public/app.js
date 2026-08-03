@@ -856,10 +856,10 @@ function attachDnD() {
       clickTimer = setTimeout(() => { showDetail('member', mid); switchTab('detail'); }, 230);
       return;
     }
-    if (kind === 'dept') {   // クリック = 展開/折りたたみ（詳細は ⓘ ボタン）。ダブルクリック改名と競合しないよう遅延
+    if (kind === 'dept') {   // クリック = 詳細を開く + 展開/折りたたみ（ダブルクリック改名と競合しないよう遅延）
       clearTimeout(clickTimer);
       const id = card.dataset.id;
-      clickTimer = setTimeout(() => toggleDept(id), 250);
+      clickTimer = setTimeout(() => { showDetail('dept', id); switchTab('detail'); toggleDept(id); }, 250);
     }
   });
 
@@ -1190,6 +1190,18 @@ $('move-top').onclick = () => completeMove(ROOT_ID);
 $('move-concurrent').onclick = toggleConcurrent;
 $('move-clear').onclick = completeLeaderClear;
 $('move-cancel').onclick = cancelMove;
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const hasEditMode = moveState || !$('addMenu').hidden || !$('leaderBar').hidden || !$('addBar').hidden;
+  if (!hasEditMode) return;
+  if (e.target && e.target.closest && e.target.closest('#cfmOverlay,#planOverlay,#memberOverlay,#csvOverlay')) return;
+  if (moveState) cancelMove();
+  if (!$('addMenu').hidden) closeAddMenu();
+  if (!$('leaderBar').hidden) closeLeaderBar();
+  if (!$('addBar').hidden) closeAddBar();
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('cfmOverlay').hidden) { closeConfirm(); return; }
