@@ -151,29 +151,39 @@ export function createService(client) {
     });
     return map;
   }
-  async function syncRoleChatMembership(roleChatMap, oldTitle, newTitle, userOpenId) {
-    if (!userOpenId || !chatAddMembers || !chatRemoveMembers) return '';
-    if (!T_CHAT) return 'チャットグループ管理テーブルが未設定/未検出のため、役職チャットグループは同期していません。';
-    if (!roleChatMap) return '';
+  function buildRoleChatImpact(roleChatMap, oldTitle, newTitle) {
+    if (!T_CHAT) return { status: 'not_configured', oldTitle: oldTitle || '', newTitle: newTitle || '', addGroups: [], removeGroups: [], missingGroups: [], notes: ['チャットグループ管理テーブルが未設定/未検出のため、役職チャットグループは同期していません。'] };
+    if (!roleChatMap) return { status: 'skipped', oldTitle: oldTitle || '', newTitle: newTitle || '', addGroups: [], removeGroups: [], missingGroups: [], notes: [] };
     const oldRole = normRole(oldTitle);
     const newRole = normRole(newTitle);
-    if (oldRole === newRole) return '';
+    if (oldRole === newRole) return { status: 'unchanged', oldTitle: oldTitle || '', newTitle: newTitle || '', addGroups: [], removeGroups: [], missingGroups: [], notes: [] };
     const notes = [];
     const oldGroups = oldRole ? (roleChatMap.get(oldRole) || []) : [];
     const newGroups = newRole ? (roleChatMap.get(newRole) || []) : [];
-    if (oldRole && !oldGroups.length) notes.push(`旧役職「${oldTitle}」のチャットグループ記録なし`);
-    if (newRole && !newGroups.length) notes.push(`新役職「${newTitle}」のチャットグループ記録なし`);
+    const missingGroups = [];
+    if (oldRole && !oldGroups.length) { missingGroups.push({ role: oldTitle || '', kind: 'old' }); notes.push(`旧役職「${oldTitle}」のチャットグループ記録なし`); }
+    if (newRole && !newGroups.length) { missingGroups.push({ role: newTitle || '', kind: 'new' }); notes.push(`新役職「${newTitle}」のチャットグループ記録なし`); }
     const byChatId = (groups) => new Map(groups.map(g => [g.chatId, g]));
     const oldById = byChatId(oldGroups);
     const newById = byChatId(newGroups);
     const removeGroups = [...oldById.values()].filter(g => !newById.has(g.chatId));
     const addGroups = [...newById.values()].filter(g => !oldById.has(g.chatId));
+    return { status: (addGroups.length || removeGroups.length) ? 'planned' : (notes.length ? 'no_mapping' : 'no_change'), oldTitle: oldTitle || '', newTitle: newTitle || '', addGroups, removeGroups, missingGroups, notes };
+  }
+  async function applyRoleChatImpact(impact, userOpenId) {
+    if (!userOpenId || !chatAddMembers || !chatRemoveMembers || !impact) return { status: 'skipped', notes: [], errors: [] };
+    if (impact.status === 'not_configured') return { status: 'not_configured', notes: impact.notes || [], errors: [] };
+    const notes = [...(impact.notes || [])];
+    const errors = [];
+    const removeGroups = impact.removeGroups || [];
+    const addGroups = impact.addGroups || [];
     for (const g of removeGroups) {
       try {
         await chatRemoveMembers(g.chatId, [userOpenId]);
         notes.push(`旧役職グループ「${g.name}」(${g.chatId}) から退出`);
       } catch (e) {
-        notes.push(`旧役職グループ「${g.name}」(${g.chatId}) 退出失敗: ${String((e && e.message) || e)}`);
+        const msg = `旧役職グループ「${g.name}」(${g.chatId}) 退出失敗: ${String((e && e.message) || e)}`;
+        notes.push(msg); errors.push(msg);
       }
     }
     for (const g of addGroups) {
@@ -181,10 +191,11 @@ export function createService(client) {
         await chatAddMembers(g.chatId, [userOpenId]);
         notes.push(`新役職グループ「${g.name}」(${g.chatId}) へ参加`);
       } catch (e) {
-        notes.push(`新役職グループ「${g.name}」(${g.chatId}) 参加失敗: ${String((e && e.message) || e)}`);
+        const msg = `新役職グループ「${g.name}」(${g.chatId}) 参加失敗: ${String((e && e.message) || e)}`;
+        notes.push(msg); errors.push(msg);
       }
     }
-    return notes.join(' / ');
+    return { status: errors.length ? 'failed' : ((addGroups.length || removeGroups.length) ? 'ok' : impact.status), notes, errors };
   }
 
   async function getOrg() {
@@ -470,7 +481,7 @@ export function createService(client) {
         return contactCall(method, apiPath, data, params);
       };
       const todo = (typeof limit === 'number') ? (ops || []).slice(0, limit) : (ops || []);
-      const results = []; let success = 0, fail = 0;
+      const results = []; let success = 0, fail = 0, chatSuccess = 0, chatFail = 0;
       // メンバー変動があった部門（openId -> recId）: 実行後に Contact の member_count で メンバー数 を更新
       const touchedDepts = new Map();
       // 同一計画内で新規作成した部門/メンバーの仮ID（new|x / newm|x）→ 実ID の解決マップ
@@ -491,7 +502,7 @@ export function createService(client) {
         }
         return resolved;
       };
-      const needsRoleChatSync = !isDry && todo.some(o => o.opType === 'MEMBER_UPDATE' && 'newTitle' in o);
+      const needsRoleChatSync = todo.some(o => o.opType === 'MEMBER_UPDATE' && 'newTitle' in o);
       let roleChatMap = new Map();
       let roleChatMapError = '';
       if (needsRoleChatSync) {
@@ -509,7 +520,7 @@ export function createService(client) {
         });
       }
       for (const o of todo) {
-        let ok = false, error = '', chatSync = '';
+        let ok = false, error = '', chatSync = '', chatSyncStatus = '', chatSyncImpact = null, chatSyncErrors = [];
         try {
           if (o.opType === 'DEPT_CREATE') {
             const pOpen = rOpen(o.toOpenId);
@@ -604,9 +615,24 @@ export function createService(client) {
             const targetUserOpen = rMemberOpen(o.targetOpenId, o.targetRecId, '対象メンバー');
             await sendOrRecord('PATCH', `/open-apis/contact/v3/users/${encodeURIComponent(targetUserOpen)}`,
               data, { user_id_type: 'open_id', department_id_type: 'open_department_id' }, `MEMBER_UPDATE ${o.targetName}`);
-            if (!isDry && 'newTitle' in o) {
+            if ('newTitle' in o) {
               const oldTitle = ('oldTitle' in o) ? o.oldTitle : (currentMemberTitle.get(`rec:${o.targetRecId}`) || currentMemberTitle.get(`open:${o.targetOpenId}`) || '');
-              chatSync = roleChatMapError || await syncRoleChatMembership(roleChatMap, oldTitle, o.newTitle, targetUserOpen);
+              if (roleChatMapError) {
+                chatSyncStatus = 'failed';
+                chatSyncErrors = [roleChatMapError];
+                chatSync = roleChatMapError;
+              } else {
+                chatSyncImpact = buildRoleChatImpact(roleChatMap, oldTitle, o.newTitle);
+                if (isDry) {
+                  chatSyncStatus = chatSyncImpact.status;
+                  chatSync = (chatSyncImpact.notes || []).join(' / ');
+                } else {
+                  const applied = await applyRoleChatImpact(chatSyncImpact, targetUserOpen);
+                  chatSyncStatus = applied.status;
+                  chatSyncErrors = applied.errors || [];
+                  chatSync = (applied.notes || []).join(' / ');
+                }
+              }
             }
           } else if (o.opType === 'MEMBER_SET_PRIMARY') {
             // 主部門の設定。Lark では is_primary_dept は書込不可（派生値）で、department_order が最大の部門が主部門。
@@ -727,12 +753,18 @@ export function createService(client) {
           ];
           pairs.forEach(([oid, rid]) => { if (oid && rid) touchedDepts.set(oid, rid); });
         }
-        results.push({ opRecId: o.opRecId, name: o.targetName, type: o.opType, ok, error, chatSync });
+        if (!isDry && ok && chatSyncStatus) {
+          if (chatSyncStatus === 'failed') chatFail += 1;
+          else if (chatSyncStatus === 'ok') chatSuccess += 1;
+        }
+        results.push({ opRecId: o.opRecId, name: o.targetName, type: o.opType, ok, error, chatSync, chatSyncStatus, chatSyncImpact, chatSyncErrors });
       }
       // dry-run: Base/監査への書き込みは一切せず、構築した Contact リクエストのみ返す
       // dry-run では「Lark 上で特定できないメンバー」も返す → 実行前に画面で警告できる
       if (isDry) return __ok({
         ok: true, dryRun: true, count: dryOps.length, ops: dryOps, results,
+        roleChatPreflightOk: !results.some(r => r.chatSyncStatus === 'failed' || r.chatSyncStatus === 'not_configured'),
+        roleChatImpacts: results.filter(r => r.chatSyncStatus || r.chatSyncImpact).map(r => ({ opRecId: r.opRecId, name: r.name, type: r.type, status: r.chatSyncStatus, impact: r.chatSyncImpact, errors: r.chatSyncErrors || [], message: r.chatSync || '' })),
         unresolvedMembers: appOpen.unresolved, lookupErrors: appOpen.lookupErrors
       });
       // 影響部門の メンバー数 を Contact の実数でリフレッシュ（best-effort）
@@ -744,22 +776,24 @@ export function createService(client) {
           if (typeof mc === 'number') await baseUpsert(T_DEPT, rid, { 'メンバー数': mc });
         } catch (_) { /* best-effort */ }
       }
-      const planStatus = fail === 0 ? (todo.length < (ops || []).length ? '実行中' : '完了') : (success > 0 ? '部分失敗' : '失敗');
-      if (planRecId) { try { await baseUpsert(T_PLAN, planRecId, { 'ステータス': planStatus, '実行日時': nowStr(), '実行結果': `${success}件成功 / ${fail}件失敗` }); } catch (_) {} }
+      const planStatus = fail === 0 && chatFail === 0 ? (todo.length < (ops || []).length ? '実行中' : '完了') : (success > 0 ? '部分失敗' : '失敗');
+      const resultSummary = `${success}件成功 / ${fail}件失敗${chatSuccess || chatFail ? ` / 群同期 ${chatSuccess}件成功・${chatFail}件失敗` : ''}`;
+      if (planRecId) { try { await baseUpsert(T_PLAN, planRecId, { 'ステータス': planStatus, '実行日時': nowStr(), '実行結果': resultSummary }); } catch (_) {} }
       try {
         // 監査ログにも「何がどう変わったか」を1行ずつ残す（誰が=作成者フィールドで自動記録）
         const detailLines = todo.map((o, i) => {
           const r = results[i] || {};
           const ba = (o.beforeText || o.afterText) ? `${o.beforeText || '—'} → ${o.afterText || '—'}` : `${o.fromName || '—'} → ${o.toName || '—'}`;
-          return `${r.ok ? '✓' : '✗'} [${o.opType}] ${o.targetName}: ${ba}${r.ok ? '' : `（${(r.error || '').slice(0, 80)}）`}`;
+          const chat = r.chatSync ? ` / 群同期: ${r.chatSyncStatus === 'failed' ? '失敗 ' : ''}${String(r.chatSync).slice(0, 160)}` : '';
+          return `${r.ok ? '✓' : '✗'} [${o.opType}] ${o.targetName}: ${ba}${r.ok ? '' : `（${(r.error || '').slice(0, 80)}）`}${chat}`;
         });
         // 組織変更は Lark 仕様上 bot 名義で書き込まれるため、実行者はアプリ側で明示的に記録する
         const actorLine = __actor ? `実行者: ${__actor}\n` : '';
         await baseCreate(T_AUDIT, ['詳細', '日時', 'アクション', '結果', '関連計画'],
-          [[`実行: ${success}件成功 / ${fail}件失敗\n${actorLine}${detailLines.join('\n')}`, nowStr(), '実行', fail === 0 ? '成功' : '失敗', planRecId ? [{ id: planRecId }] : null]]);
+          [[`実行: ${resultSummary}\n${actorLine}${detailLines.join('\n')}`, nowStr(), '実行', fail === 0 && chatFail === 0 ? '成功' : '失敗', planRecId ? [{ id: planRecId }] : null]]);
       } catch (_) {}
       return __ok({
-        ok: fail === 0, results, success, fail, planStatus,
+        ok: fail === 0 && chatFail === 0, results, success, fail, chatSuccess, chatFail, planStatus,
         unresolvedMembers: appOpen.unresolved   // 失敗した op の原因追跡用
       });
     } catch (e) { throw e; }

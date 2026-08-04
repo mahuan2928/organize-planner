@@ -593,10 +593,15 @@ body {
 }
 .act-err { color: var(--danger) !important; background: var(--danger-bg); border: 1px solid var(--danger-line); border-radius: var(--r-sm); padding: 9px 11px; }
 .act-hint { font-size: 11px; color: var(--ink-3); line-height: 1.5; }
+.role-chat-preflight ul { margin: 6px 0 0; padding-left: 18px; }
+.role-chat-preflight { max-height: 260px; overflow: auto; }
+.role-chat-summary { margin-top: 4px; font-weight: 700; color: var(--ink-2); }
+.role-chat-preflight li { margin: 5px 0; }
 .res { font-size: 12px; padding: 7px 10px; border-radius: var(--r-sm); line-height: 1.45; }
 .res.ok { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-line); }
 .res.ng { background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger-line); }
 .res-sub { margin-top: 3px; font-size: 11px; opacity: .82; }
+.res-sub.ng { opacity: 1; font-weight: 700; }
 
 /* plan form */
 .act-form { display: flex; flex-direction: column; gap: 4px; }

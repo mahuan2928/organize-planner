@@ -213,9 +213,9 @@ const ONBOARDING_STEPS = [
   },
   {
     selector: '#actionMain',
-    title: '5. 最後に予約を確定する',
-    body: '予約の確定が、正式な Lark 反映の最終ステップです。',
-    tasks: ['実行対象件数を確認', '削除や大きな異動がないか確認', '問題なければ予約を確定'],
+    title: '5. 最後に実行する',
+    body: '実行が、正式な Lark 反映の最終ステップです。',
+    tasks: ['実行対象件数を確認', '削除や大きな異動がないか確認', '問題なければ実行する'],
     safe: '不安な場合は、確定前に右側の「変更内容」をもう一度確認してください。',
     finalCta: '検索へ進む'
   }
@@ -2571,7 +2571,7 @@ function planPhase() {
   if (!PLAN) return 'none';
   if (!PLAN.results) return 'saved';
   const remaining = PLAN.execOps.length - (PLAN.doneCount || 0);
-  if (PLAN.results.fail > 0) return 'failed';
+  if (PLAN.results.fail > 0 || PLAN.results.chatFail > 0) return 'failed';
   return remaining > 0 ? 'partial' : 'done';
 }
 function renderHeaderState(opsLen) {
@@ -2593,7 +2593,7 @@ function renderHeaderState(opsLen) {
   // メインアクション（状態機械）
   const btn = $('actionMain');
   if (ph === 'done') { btn.disabled = false; btn.textContent = '再読み込みして反映'; btn.onclick = load; btn.title = 'Lark に反映済み。最新の組織を再読み込みします'; }
-  else if (ph === 'saved' || ph === 'partial') { btn.disabled = false; btn.textContent = '予約を確定…'; btn.onclick = () => { switchTab('review'); confirmExec(); }; btn.title = '確定するまで Lark は変更されません。押すと確認画面が開きます'; }
+  else if (ph === 'saved' || ph === 'partial') { btn.disabled = false; btn.textContent = '実行する…'; btn.onclick = () => { switchTab('review'); confirmExec(); }; btn.title = '実行するまで Lark は変更されません。押すと最終確認画面が開きます'; }
   else if (opsLen) { btn.disabled = false; btn.textContent = `実行計画を保存（${opsLen}件）`; btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = '下書きを実行計画として保存します（この時点では Lark に未反映）'; }
   else { btn.disabled = true; btn.textContent = '変更なし'; btn.onclick = null; btn.title = '部門を選んで組織を編集できます'; }
 }
@@ -2877,6 +2877,26 @@ async function doSave() {
     renderDiff();
   } catch (e) { setAct('実行計画の保存に失敗しました: ' + (e.message || e), true); logHist('計画保存失敗', String((e && e.message) || e)); }
 }
+function groupNames(list) {
+  return (list || []).map(g => g.name || g.chatId).filter(Boolean).join('、') || 'なし';
+}
+function roleChatPreflightHtml(items = []) {
+  if (!items.length) return '';
+  let addCount = 0, removeCount = 0, warnCount = 0;
+  items.forEach(x => {
+    addCount += ((x.impact || {}).addGroups || []).length;
+    removeCount += ((x.impact || {}).removeGroups || []).length;
+    if (x.status === 'failed' || x.status === 'not_configured' || ((x.impact || {}).notes || []).length || (x.errors || []).length) warnCount += 1;
+  });
+  const rows = items.map(x => {
+    const impact = x.impact || {};
+    const notes = [...(impact.notes || []), ...(x.errors || [])].filter(Boolean).join(' / ');
+    const cls = (x.status === 'failed' || x.status === 'not_configured') ? 'act-err' : (notes ? 'act-warn' : '');
+    const title = `${impact.oldTitle || 'なし'} → ${impact.newTitle || 'なし'}`;
+    return `<li class="${cls}"><b>${esc(x.name || '')}</b> <span>${esc(title)}</span><br>退出: ${esc(groupNames(impact.removeGroups))}<br>参加: ${esc(groupNames(impact.addGroups))}${notes ? `<br><span>${esc(notes)}</span>` : ''}</li>`;
+  }).join('');
+  return `<div class="act-note role-chat-preflight"><b>職位チャットグループ同期の影響</b><div class="role-chat-summary">対象 ${items.length}件 ・ 退出 ${removeCount}群 ・ 参加 ${addCount}群${warnCount ? ` ・ 要確認 ${warnCount}件` : ''}</div><ul>${rows}</ul></div>`;
+}
 async function confirmExec(limit) {
   const start = PLAN.doneCount || 0;                       // 実行済み件数（部分実行のカーソル）
   const n = limit || (PLAN.execOps.length - start);
@@ -2884,6 +2904,7 @@ async function confirmExec(limit) {
   const del = batch.filter(o => o.deleteFlag).length;
   const depts = new Set(batch.filter(o => o.objType === '部門').map(o => o.targetName)).size;
   const mems = new Set(batch.filter(o => o.objType === 'メンバー').map(o => o.targetName)).size;
+  const hasRoleTitleChange = batch.some(o => o.opType === 'MEMBER_UPDATE' && 'newTitle' in o);
   // 確定前に dry-run で下見し、Lark 上で特定できないメンバーを洗い出す（実行して初めて失敗するのを避ける）
   let preflight = '';
   try {
@@ -2895,10 +2916,22 @@ async function confirmExec(limit) {
       preflight = `<div class="act-note act-err"><b>Lark 上で特定できないメンバーが ${bad.length} 名います</b>（${names}${bad.length > 5 ? ' ほか' : ''}）。
         該当する変更は実行時に失敗します。台帳のメールアドレスをご確認ください。</div>`;
     }
+    const chatImpacts = (pre && pre.roleChatImpacts) || [];
+    if (chatImpacts.length) preflight += roleChatPreflightHtml(chatImpacts);
+    if (hasRoleTitleChange && pre && pre.roleChatPreflightOk === false) {
+      $('diff-actions').innerHTML = `<div class="act-note act-err">職位チャットグループの影響を確認できないため、実行を停止しました。チャットグループ管理テーブルまたは権限を確認してください。</div>${roleChatPreflightHtml(chatImpacts)}`;
+      return;
+    }
     renderActions();
-  } catch (_) { renderActions(); /* 下見に失敗しても確認自体は続行する */ }
+  } catch (e) {
+    renderActions();
+    if (hasRoleTitleChange) {
+      setAct('職位チャットグループの影響を確認できないため、実行を停止しました: ' + ((e && e.message) || e), true);
+      return;
+    }
+  }
   openConfirm({
-    title: '手動実行の確認',
+    title: '実行の最終確認',
     body:
       `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・実行計画はすべて未反映でした。</div>
        ${preflight}
@@ -2911,7 +2944,7 @@ async function confirmExec(limit) {
        <div class="cfm-meta">プラン: ${esc(PLAN.name || '組織変更')} ・ 反映タイミング: <b>今すぐ</b></div>
        <div class="act-note act-warn">確定すると、Lark の正式な組織データに反映されます。移動・改名はあとから変更できますが、<b>削除は元に戻せません</b>。</div>`,
     checkLabel: '変更内容と影響範囲を確認しました。確定すると正式な組織データに反映されることを理解しています。',
-    okLabel: `予約を確定（${n}件）`,
+    okLabel: `実行する（${n}件）`,
     onOk: () => execNow(limit)
   });
 }
@@ -2952,8 +2985,9 @@ async function execNow(limit) {
     if (r.fail === 0 && PLAN.doneCount >= PLAN.execOps.length && !hasChatSyncNote) {
       showToast(`${r.success}件の変更を実行しました。最新の組織を再読み込みしています…`);
       setTimeout(() => load(true), 1400);
-    } else if (r.fail > 0) {
-      showToast(`実行に失敗した操作があります（成功 ${r.success}件 ・ 失敗 ${r.fail}件）。詳細を確認してください。`, true);
+    } else if (r.fail > 0 || r.chatFail > 0) {
+      const chatMsg = r.chatFail ? ` / 職位チャットグループ同期失敗 ${r.chatFail}件` : '';
+      showToast(`実行結果を確認してください（組織変更: 成功 ${r.success}件・失敗 ${r.fail}件${chatMsg}）。`, true);
     } else if (hasChatSyncNote) {
       showToast('組織変更は成功しました。チャットグループ同期の詳細を確認してください。', true);
     }
@@ -2996,10 +3030,13 @@ function renderActions() {
     $('btn-all').onclick = () => confirmExec();
   } else {
     const r = PLAN.results;
-    const rows = r.results.map(x => `<div class="res ${x.ok ? 'ok' : 'ng'}">${x.ok ? '✓' : '✗'} ${esc(x.name)}${x.error ? '：' + esc(x.error) : ''}${x.chatSync ? `<div class="res-sub">${esc(x.chatSync)}</div>` : ''}</div>`).join('');
+    const rows = r.results.map(x => {
+      const chatFailed = x.chatSyncStatus === 'failed';
+      return `<div class="res ${x.ok ? 'ok' : 'ng'}"><div>${x.ok ? '✓ 組織変更 成功' : '✗ 組織変更 失敗'}: ${esc(x.name)}${x.error ? '：' + esc(x.error) : ''}</div>${x.chatSync ? `<div class="res-sub ${chatFailed ? 'ng' : ''}">${chatFailed ? '✗' : '✓'} 職位チャットグループ同期${chatFailed ? '失敗' : ''}: ${esc(x.chatSync)}</div>` : ''}</div>`;
+    }).join('');
     const remaining = PLAN.execOps.length - (PLAN.doneCount || 0);
     el.innerHTML =
-      `<div class="act-note">実行結果: <b>成功 ${r.success}件 ・ 失敗 ${r.fail}件</b>（プラン: ${esc(r.planStatus)}）</div>${rows}` +
+      `<div class="act-note ${r.chatFail ? 'act-err' : ''}">実行結果: <b>組織変更 成功 ${r.success}件 ・ 失敗 ${r.fail}件${r.chatFail ? ` / 職位チャットグループ同期失敗 ${r.chatFail}件` : ''}</b>（プラン: ${esc(r.planStatus)}）</div>${rows}` +
       (remaining > 0 ? `<button id="btn-all" class="act act-danger">残りを実行（${remaining}件）</button>` : '') +
       `<button id="btn-refresh" class="act act-primary">再読み込みして反映</button>` +
       `<div class="act-hint">Lark の組織と Base の台帳を更新しました。再読み込みで最新の状態を表示します。</div>`;

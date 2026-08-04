@@ -12,7 +12,7 @@ const TABLES = { dept: 'tblD', member: 'tblM', plan: 'tblP', op: 'tblO', audit: 
  * @param aliveOpenIds users/batch で有効と確認できる open_id
  * @param failLookup true なら batch_get_id が例外を投げる（スコープ不足の再現）
  */
-function mockClient({ members, chatRows = [], roleRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false, failChatTable = false }) {
+function mockClient({ members, chatRows = [], roleRows = [], emailToOpen = {}, aliveOpenIds = [], failLookup = false, failChatTable = false, failChatAdd = false, failChatRemove = false }) {
   const calls = [];
   return {
     calls,
@@ -33,8 +33,8 @@ function mockClient({ members, chatRows = [], roleRows = [], emailToOpen = {}, a
     },
     baseUpsert: async () => ({}),
     baseDelete: async () => ({}),
-    chatAddMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_ADD', path: chatId, data: openIds }); return {}; },
-    chatRemoveMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_REMOVE', path: chatId, data: openIds }); return {}; },
+    chatAddMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_ADD', path: chatId, data: openIds }); if (failChatAdd) throw new Error('chat add denied'); return {}; },
+    chatRemoveMembers: async (chatId, openIds) => { calls.push({ method: 'CHAT_REMOVE', path: chatId, data: openIds }); if (failChatRemove) throw new Error('chat remove denied'); return {}; },
     contactCall: async (method, path, data, params) => {
       calls.push({ method, path, data, params });
       if (path.includes('/users/batch_get_id')) {
@@ -146,6 +146,25 @@ test('役職変更時、旧役職グループから退出し新役職グルー�
   assert.match(r.results[0].chatSync, /新役職グループ/);
 });
 
+test('dry-run では役職チャットグループの加退群影響を返し、IM API は呼ばない', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [
+      { record_id: 'chat1', '役職フィルター': '主任', chat_id: 'oc_old', 'チャットグループ名': '主任チャット' },
+      { record_id: 'chat2', '役職フィルター': '課長', chat_id: 'oc_new', 'チャットグループ名': '課長チャット' }
+    ]
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1')], dryRun: true });
+
+  assert.equal(r.roleChatPreflightOk, true);
+  assert.equal(r.roleChatImpacts.length, 1);
+  assert.equal(r.roleChatImpacts[0].impact.removeGroups[0].chatId, 'oc_old');
+  assert.equal(r.roleChatImpacts[0].impact.addGroups[0].chatId, 'oc_new');
+  assert.equal(client.calls.filter(c => c.method === 'CHAT_REMOVE' || c.method === 'CHAT_ADD').length, 0);
+});
+
 test('役職を空にした場合、旧役職グループから退出し新規参加はしない', async () => {
   const client = mockClient({
     members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
@@ -217,7 +236,7 @@ test('group_chat フィールド名でも旧役職グループから退出でき
   assert.deepEqual(client.calls.find(c => c.method === 'CHAT_REMOVE'), { method: 'CHAT_REMOVE', path: 'oc_group_chat', data: ['ou_NEW'] });
 });
 
-test('チャットグループ管理テーブルを読めない場合、職位更新は成功し同期警告を残す', async () => {
+test('チャットグループ管理テーブルを読めない場合、職位更新は成功するが全体は部分失敗にする', async () => {
   const client = mockClient({
     members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
     emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
@@ -226,9 +245,29 @@ test('チャットグループ管理テーブルを読めない場合、職位�
   const svc = createService(client);
   const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '主任', newTitle: '' })] });
 
-  assert.equal(r.ok, true);
+  assert.equal(r.ok, false);
   assert.equal(r.results[0].ok, true);
+  assert.equal(r.chatFail, 1);
+  assert.equal(r.planStatus, '部分失敗');
   assert.match(r.results[0].chatSync, /チャットグループ管理テーブルの読み取りに失敗/);
+});
+
+test('チャットグループ参加失敗時、職位更新は成功するが全体は部分失敗にする', async () => {
+  const client = mockClient({
+    members: [{ record_id: 'rec1', 氏名: '田中', メールアドレス: 'tanaka@example.com', open_id: 'ou_OLD' }],
+    emailToOpen: { 'tanaka@example.com': 'ou_NEW' },
+    chatRows: [{ record_id: 'chat2', '役職フィルター': '課長', chat_id: 'oc_new', 'チャットグループ名': '課長チャット' }],
+    failChatAdd: true
+  });
+  const svc = createService(client);
+  const r = await svc.execute({ ops: [memberUpdateOp('ou_OLD', 'rec1', { oldTitle: '', newTitle: '課長' })] });
+
+  assert.equal(r.ok, false);
+  assert.equal(r.results[0].ok, true);
+  assert.equal(r.results[0].chatSyncStatus, 'failed');
+  assert.equal(r.chatFail, 1);
+  assert.match(r.results[0].chatSync, /参加失敗/);
+  assert.ok(client.calls.find(c => c.method === 'PATCH'));
 });
 
 test('予約プラン保存は日付をミリ秒、リンクをrecord_id配列で書き込む', async () => {
