@@ -38,7 +38,7 @@
 
     <div class="statuschips">
       <span id="chip-draft" class="stchip st-gray">変更なし</span>
-      <span id="chip-plan" class="stchip st-gray">予約プラン未作成</span>
+      <span id="chip-plan" class="stchip st-gray">実行プラン未保存</span>
     </div>
 
     <div class="toolbar">
@@ -80,8 +80,6 @@
           <button id="collabMenuBtn" class="btn btn-domain" type="button" aria-label="連携メニュー">連携 ▾</button>
           <div id="collabMenu" class="more-menu domain-menu" hidden>
             <button id="menuChatGroup" class="mm-item">役職からチャットグループ作成</button>
-            <button class="mm-item" disabled>通知（準備中）</button>
-            <button class="mm-item" disabled>承認（準備中）</button>
           </div>
         </div>
       </div>
@@ -95,7 +93,7 @@
             <button id="exportTreePdf" class="mm-item">ツリー図をPDF出力</button>
             <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>
             <div class="mm-sep"></div>
-            <button id="planList" class="mm-item">予約プラン一覧…</button>
+            <button id="planList" class="mm-item">実行プラン一覧…</button>
             <button id="menuReview" class="mm-item">変更内容を開く</button>
             <button id="menuHistory" class="mm-item">操作履歴を開く</button>
             <div class="mm-sep"></div>
@@ -180,7 +178,7 @@
         <div id="review-empty" class="sp-empty">
           <div class="spe-icon ok">✓</div>
           <div class="spe-title">まだ変更はありません</div>
-          <div class="spe-sub">部門またはメンバーをドラッグすると、変更内容がここに表示されます。<br>予約プランの作成 → 予約の確定までは、正式な組織には反映されません。</div>
+          <div class="spe-sub">部門またはメンバーをドラッグすると、変更内容がここに表示されます。<br>実行プランの保存 → 手動実行までは、正式な組織には反映されません。</div>
           <div class="spe-actions">
             <button id="reviewSearch" class="spe-btn spe-btn-primary" type="button">部門を検索する</button>
             <button id="reviewFit" class="spe-btn" type="button">全体を表示</button>
@@ -206,7 +204,7 @@
         <div id="hist-empty" class="sp-empty">
           <div class="spe-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
           <div class="spe-title">操作履歴はまだありません</div>
-          <div class="spe-sub">この画面で行った下書きの編集・予約プランの作成・実行の記録が表示されます（このセッション内）。すべての履歴は Base の監査ログをご確認ください。</div>
+          <div class="spe-sub">この画面で行った下書きの編集・実行プランの保存・実行の記録が表示されます（このセッション内）。すべての履歴は Base の監査ログをご確認ください。</div>
         </div>
       </div>
     </aside>
@@ -238,11 +236,11 @@
   </div>
 
   <div id="planOverlay" class="csv-overlay" hidden>
-    <div class="csv-modal plan-modal" role="dialog" aria-label="予約プラン一覧">
+    <div class="csv-modal plan-modal" role="dialog" aria-label="実行プラン一覧">
       <div class="csv-head">
         <div>
-          <div class="csv-title">予約プラン一覧</div>
-          <div class="csv-sub">保存した予約プランを再読み込み後も開いて実行できます</div>
+          <div class="csv-title">実行プラン一覧</div>
+          <div class="csv-sub">保存した実行プランを再読み込み後も開いて実行できます</div>
         </div>
         <button id="plan-close" class="csv-close" title="閉じる" aria-label="閉じる">✕</button>
       </div>
@@ -347,7 +345,7 @@
 
   <footer class="footer">
     <span class="foot-left"><span class="status-dot" aria-hidden="true"></span>ローカル環境 ・ Lark Base 同期</span>
-    <span class="foot-right">組織改編は「予約プランの作成 → 予約の確定」の 2 段階で反映されます</span>
+    <span class="foot-right">組織改編は「実行プランの保存 → 手動実行」の 2 段階で反映されます</span>
   </footer>
 
   <script src="/app.js" defer></script>

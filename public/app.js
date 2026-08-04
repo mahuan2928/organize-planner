@@ -182,7 +182,7 @@ const ONBOARDING_STEPS = [
   {
     title: '組織プランナーへようこそ',
     body: 'このガイドでは、実際の組織変更に近い流れで使い方を確認します。',
-    tasks: ['対象を検索する', '組織構造を確認する', 'ドラッグで下書きを作る', '差分とリスクを確認する', '実行計画を保存・確認する'],
+    tasks: ['対象を検索する', '組織構造を確認する', 'ドラッグで下書きを作る', '差分とリスクを確認する', '実行プランを保存・確認する'],
     safe: '所要時間は約 1 分です。実行するまで、Lark 側の正式な組織は変更されません。'
   },
   {
@@ -206,10 +206,10 @@ const ONBOARDING_STEPS = [
   },
   {
     selector: '#actionMain',
-    title: '4. 実行計画を保存する',
-    body: '変更があると、右上の主ボタンから実行計画を保存できます。',
+    title: '4. 実行プランを保存する',
+    body: '変更があると、右上の主ボタンから実行プランを保存できます。',
     tasks: ['変更件数を確認', '計画名を入力', '保存後に実行前レビューへ進む'],
-    safe: '実行計画の保存だけでは Lark 組織は変更されません。'
+    safe: '実行プランの保存だけでは Lark 組織は変更されません。'
   },
   {
     selector: '#actionMain',
@@ -2583,8 +2583,8 @@ function renderHeaderState(opsLen) {
   if (ds) { ds.hidden = !opsLen; if (opsLen) $('ds-count').textContent = `${opsLen}件`; }
   const cp = $('chip-plan'); const ph = planPhase();
   const map = {
-    none: ['st-gray', '実行計画未保存'],
-    saved: ['st-amber', '実行計画保存済み・実行待ち'],
+    none: ['st-gray', '実行プラン未保存'],
+    saved: ['st-amber', '実行プラン保存済み・実行待ち'],
     partial: ['st-amber', '一部実行済み'],
     failed: ['st-red', '実行に失敗した項目あり'],
     done: ['st-green', '実行済み']
@@ -2594,7 +2594,7 @@ function renderHeaderState(opsLen) {
   const btn = $('actionMain');
   if (ph === 'done') { btn.disabled = false; btn.textContent = '再読み込みして反映'; btn.onclick = load; btn.title = 'Lark に反映済み。最新の組織を再読み込みします'; }
   else if (ph === 'saved' || ph === 'partial') { btn.disabled = false; btn.textContent = '実行する…'; btn.onclick = () => { switchTab('review'); confirmExec(); }; btn.title = '実行するまで Lark は変更されません。押すと最終確認画面が開きます'; }
-  else if (opsLen) { btn.disabled = false; btn.textContent = `実行計画を保存（${opsLen}件）`; btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = '下書きを実行計画として保存します（この時点では Lark に未反映）'; }
+  else if (opsLen) { btn.disabled = false; btn.textContent = `実行プランを保存（${opsLen}件）`; btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = '下書きを実行プランとして保存します（この時点では Lark に未反映）'; }
   else { btn.disabled = true; btn.textContent = '変更なし'; btn.onclick = null; btn.title = '部門を選んで組織を編集できます'; }
 }
 
@@ -2619,7 +2619,7 @@ function renderDiff() {
          <div class="rs-cell ${risks.high ? 'rs-risk' : ''}"><span class="rs-num">${risks.high + risks.medium}</span><span class="rs-lbl">要注意（High ${risks.high}）</span></div>
        </div>
        <div class="rs-chips">${Object.keys(OP_CHIP).filter(k => cnt[k]).map(k => `<span class="chip chip-${OP_CLS[k]}">${OP_CHIP[k]} ${cnt[k]}</span>`).join('')}</div>
-       <div class="rs-note">下書きの変更です。実行計画の保存 → 手動実行までは、正式な組織には反映されません。</div>`
+       <div class="rs-note">下書きの変更です。実行プランの保存 → 手動実行までは、正式な組織には反映されません。</div>`
     : '';
   $('diff-list').innerHTML = ops.map(o => {
     const risk = riskOf(o);
@@ -2647,7 +2647,7 @@ function renderDiff() {
   renderActions();
 }
 
-// 読み込んだ実行計画を読み取り専用でレビュー欄に表示
+// 読み込んだ実行プランを読み取り専用でレビュー欄に表示
 function renderLoadedPlan() {
   const p = PLAN;
   $('reset').disabled = true;
@@ -2657,7 +2657,7 @@ function renderLoadedPlan() {
   $('diffPanel') && ($('diffPanel').hidden = false);
   $('review-summary').innerHTML =
     `<div class="rs-note" style="color:var(--primary);background:var(--primary-soft);border-color:#D6E4FD;display:flex;gap:8px;align-items:center;justify-content:space-between;">
-       <span>読み込んだ実行計画「${esc(p.name || '')}」・${p.execOps.length} 件</span>
+       <span>読み込んだ実行プラン「${esc(p.name || '')}」・${p.execOps.length} 件</span>
        <button id="loaded-close" class="di-btn">閉じる</button></div>`;
   const lc = $('loaded-close'); if (lc) lc.onclick = () => { PLAN = null; render(); renderDiff(); };
   $('diff-list').innerHTML = p.execOps.map(o => `
@@ -2672,7 +2672,7 @@ function renderLoadedPlan() {
   renderHeaderState(0);
   renderActions();
 }
-// ⋯メニュー → 実行計画一覧
+// ⋯メニュー → 実行プラン一覧
 async function openPlanList() {
   closeMore();
   cancelMove(); closeAddBar(); closeLeaderBar();
@@ -2686,15 +2686,16 @@ async function openPlanList() {
 }
 function closePlanList() { $('planOverlay').hidden = true; }
 const PLAN_STATUS_CLS = { '予約済み': 'st-amber', '実行中': 'st-amber', '完了': 'st-green', '部分失敗': 'st-red', '失敗': 'st-red' };
+const PLAN_STATUS_LABEL = { '予約済み': '実行待ち', '実行中': '実行中', '完了': '完了', '部分失敗': '部分失敗', '失敗': '失敗' };
 function renderPlanRows(plans) {
   const box = $('plan-list');
-  if (!plans.length) { box.innerHTML = '<div class="sr-empty">保存された実行計画はありません。</div>'; return; }
+  if (!plans.length) { box.innerHTML = '<div class="sr-empty">保存された実行プランはありません。</div>'; return; }
   box.innerHTML = plans.map((p, i) => {
     const done = p.status === '完了' || p.status === '実行中' || p.status === '部分失敗';
     const stCls = PLAN_STATUS_CLS[p.status] || 'st-gray';
     return `<div class="plan-row">
       <div class="plan-main">
-        <div class="plan-name">${esc(p.name)}<span class="stchip ${stCls}" style="margin-left:8px;">${esc(p.status || '—')}</span></div>
+        <div class="plan-name">${esc(p.name)}<span class="stchip ${stCls}" style="margin-left:8px;">${esc(PLAN_STATUS_LABEL[p.status] || p.status || '—')}</span></div>
         <div class="plan-meta">${esc(p.summary || `${p.opCount} 件`)}${p.effectiveDate ? ` ・ 目安 ${esc(p.effectiveDate)}` : ''}${p.createdBy ? ` ・ ${esc(p.createdBy)}` : ''}${p.result ? ` ・ ${esc(p.result)}` : ''}</div>
       </div>
       <button class="act ${done || !p.opCount ? '' : 'act-primary'} plan-open" data-i="${i}" ${(done || !p.opCount) ? 'disabled' : ''}>${done ? '実行済み' : (p.opCount ? 'この画面で開く' : '再開不可')}</button>
@@ -2708,7 +2709,7 @@ function loadSavedPlan(p) {
   PLAN = { planRecId: p.recId, name: p.name, planUrl: BASE_URL, execOps: p.ops.map(o => ({ ...o })), loaded: true };
   closePlanList();
   switchTab('review'); renderDiff();
-  showToast(`実行計画「${p.name}」を読み込みました。内容を確認して手動実行できます。`);
+  showToast(`実行プラン「${p.name}」を読み込みました。内容を確認して手動実行できます。`);
 }
 $('planList').onclick = openPlanList;
 $('plan-close').onclick = closePlanList;
@@ -2849,14 +2850,15 @@ function summaryText() {
 }
 function showSaveForm() {
   const el = $('diff-actions');
+  const minTime = nowLocalInput();
   el.innerHTML =
     `<div class="act-form">
        <label class="act-lbl">プラン名</label>
        <input id="f-name" class="act-input" value="組織変更 ${new Date().toISOString().slice(0, 10)}">
        <label class="act-lbl">実行目安日時</label>
-       <input id="f-date" class="act-input" type="datetime-local" value="${nowLocalInput()}">
-       <div class="act-hint">※ 自動実行ではありません。保存後、実行前レビューで手動実行すると Lark に反映されます。</div>
-       <div class="act-row"><button id="f-save" class="act act-primary">実行計画を保存</button><button id="f-cancel" class="act">キャンセル</button></div>
+       <input id="f-date" class="act-input" type="datetime-local" value="${minTime}" min="${minTime}">
+       <div class="act-hint">※ 自動実行ではありません。保存後、実行前レビューで手動実行すると Lark に反映されます。日時は実行目安として記録されます。</div>
+       <div class="act-row"><button id="f-save" class="act act-primary">実行プランを保存</button><button id="f-cancel" class="act">キャンセル</button></div>
      </div>`;
   $('f-name').focus();
   $('f-save').onclick = doSave;
@@ -2867,15 +2869,20 @@ async function doSave() {
   const name = ($('f-name').value || '').trim() || '組織変更';
   // datetime-local の "YYYY-MM-DDTHH:mm" を台帳の "YYYY-MM-DD HH:mm:ss" 表記へ整形（送信内容の意味は不変）
   let eff = ($('f-date').value || '').trim().replace('T', ' ');
+  const rawDate = $('f-date').value;
+  if (rawDate && new Date(rawDate).getTime() < Date.now() - 60 * 1000) {
+    setAct('過去の日時は指定できません。現在以降の実行目安日時を選択してください。', true);
+    return;
+  }
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(eff)) eff += ':00';
-  setAct('実行計画を保存しています…');
+  setAct('実行プランを保存しています…');
   try {
     const r = await postJSON('/api/plan', { name, effectiveDate: eff, summary: summaryText(), operations: ops });
     if (!r.ok) throw new Error(r.error);
     PLAN = { planRecId: r.planRecId, planUrl: r.planUrl, name, execOps: ops.map((o, i) => ({ ...o, opRecId: r.opRecIds[i] })) };
     logHist('計画保存', `「${name}」（${ops.length} 件）を Base 台帳に保存`);
     renderDiff();
-  } catch (e) { setAct('実行計画の保存に失敗しました: ' + (e.message || e), true); logHist('計画保存失敗', String((e && e.message) || e)); }
+  } catch (e) { setAct('実行プランの保存に失敗しました: ' + (e.message || e), true); logHist('計画保存失敗', String((e && e.message) || e)); }
 }
 function groupNames(list) {
   return (list || []).map(g => g.name || g.chatId).filter(Boolean).join('、') || 'なし';
@@ -2933,7 +2940,7 @@ async function confirmExec(limit) {
   openConfirm({
     title: '実行の最終確認',
     body:
-      `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・実行計画はすべて未反映でした。</div>
+      `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・実行プランはすべて未反映でした。実行目安日時による自動実行には対応していません。</div>
        ${preflight}
        <div class="cfm-grid">
          <div><span class="cfm-num">${n}</span><span class="cfm-lbl">実行する変更</span></div>
@@ -3014,14 +3021,14 @@ function renderActions() {
   if (!ops.length && !(PLAN && PLAN.loaded)) { el.innerHTML = ''; return; }
   if (!PLAN) {
     el.innerHTML =
-      `<button id="btn-save" class="act act-primary">実行計画を保存</button>` +
+      `<button id="btn-save" class="act act-primary">実行プランを保存</button>` +
       `<div class="act-hint">保存しても <b>Lark には反映されません</b>。手動実行で初めて反映されます。</div>`;
     $('btn-save').onclick = showSaveForm;
   } else if (!PLAN.results) {
     // 新規作成を含む計画は一括実行のみ（部分実行だと仮ID new|x の解決マップがリクエストをまたげないため）
     const hasCreate = PLAN.execOps.some(o => o.opType === 'DEPT_CREATE' || o.opType === 'MEMBER_CREATE');
     el.innerHTML =
-      `<div class="act-note">実行計画を保存しました（<b>まだ Lark に未反映</b>）<a href="${PLAN.planUrl}" target="_blank">台帳を開く ↗</a></div>` +
+      `<div class="act-note">実行プランを保存しました（<b>まだ Lark に未反映</b>）<a href="${PLAN.planUrl}" target="_blank">台帳を開く ↗</a></div>` +
       (hasCreate ? `<div class="act-hint">新規作成を含む計画のため、まとめて実行のみになります</div>`
                  : `<button id="btn-test" class="act act-primary">まず1件のみ実行</button>`) +
       `<button id="btn-all" class="act act-danger">すべて実行（${PLAN.execOps.length}件）</button>` +
