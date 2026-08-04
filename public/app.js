@@ -1129,11 +1129,18 @@ function titleSelectHtml(currentValue, className = 'role-select', options = titl
   </select>`;
 }
 
-function leaderSelectHtml(currentLeaderId, memId) {
-  const opts = leaderOptionsFor(memId);
+function leaderOptionLabel(m) {
+  return `${m.name}${m.title ? `（${m.title}）` : ''}`;
+}
+
+function leaderOptionSearchText(m) {
+  return `${m.name || ''} ${m.title || ''} ${[...m.deptIds].map(deptNameById).join(' ')}`.normalize('NFKC').toLowerCase();
+}
+
+function leaderSelectHtml(currentLeaderId, memId, options = leaderOptionsFor(memId)) {
   return `<select class="detail-select dt-leader-select" aria-label="上長を選択">
     <option value="">上長なし</option>
-    ${opts.map(m => `<option value="${esc(m.id)}"${m.id === currentLeaderId ? ' selected' : ''}>${esc(m.name)}${m.title ? `（${esc(m.title)}）` : ''}</option>`).join('')}
+    ${options.map(m => `<option value="${esc(m.id)}"${m.id === currentLeaderId ? ' selected' : ''}>${esc(leaderOptionLabel(m))}</option>`).join('')}
   </select>`;
 }
 
@@ -1235,8 +1242,18 @@ function startDetailMemberLeaderEdit(row) {
   const valEl = row.querySelector('.dt-val');
   if (!valEl || valEl.querySelector('input,select')) return;
   row.classList.add('editing');
-  valEl.innerHTML = `<div class="role-edit-wrap">${leaderSelectHtml(m.leaderId || '', m.id)}<div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div></div>`;
+  const allLeaders = leaderOptionsFor(m.id);
+  valEl.innerHTML = `<div class="role-edit-wrap"><input class="detail-search dt-leader-search" type="search" placeholder="上長を検索（氏名・役職・部門）" aria-label="上長候補を検索">${leaderSelectHtml(m.leaderId || '', m.id, allLeaders)}<div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div></div>`;
+  const searchEl = valEl.querySelector('.dt-leader-search');
   const selEl = valEl.querySelector('select');
+  const renderLeaderOptions = () => {
+    const q = String(searchEl.value || '').normalize('NFKC').trim().toLowerCase();
+    const current = selEl.value;
+    const filtered = q ? allLeaders.filter(x => leaderOptionSearchText(x).includes(q)) : allLeaders;
+    const currentLeader = current ? allLeaders.find(x => x.id === current) : null;
+    const visible = currentLeader && !filtered.some(x => x.id === current) ? [currentLeader, ...filtered] : filtered;
+    selEl.innerHTML = `<option value=""${current ? '' : ' selected'}>上長なし</option>${visible.map(x => `<option value="${esc(x.id)}"${x.id === current ? ' selected' : ''}>${esc(leaderOptionLabel(x))}</option>`).join('')}`;
+  };
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
@@ -1249,6 +1266,12 @@ function startDetailMemberLeaderEdit(row) {
   };
   const cancelActive = () => finish(false);
   ACTIVE_ROLE_CANCEL = cancelActive;
+  searchEl.addEventListener('input', renderLeaderOptions);
+  searchEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); selEl.focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
   valEl.querySelector('.dt-save').onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(true); };
   valEl.querySelector('.dt-cancel').onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(false); };
   selEl.addEventListener('keydown', (e) => {
