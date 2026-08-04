@@ -967,12 +967,14 @@ async function startEditMemberTitle(card) {
   const old = m.title || '';
   let sub = idEl.querySelector('.oc-sub');
   if (!sub) { sub = document.createElement('div'); sub.className = 'oc-sub oc-msub'; idEl.appendChild(sub); }
-  sub.innerHTML = titleSelectHtml(old, 'role-select oc-title-input', await loadRoleOptions());
+  sub.innerHTML = `<span class="role-edit-wrap">${titleSelectHtml(old, 'role-select oc-title-input', await loadRoleOptions())}<button class="role-cancel" type="button">取消</button></span>`;
   const inp = sub.querySelector('select');
+  const cancelBtn = sub.querySelector('.role-cancel');
   inp.focus();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
+    if (ACTIVE_ROLE_CANCEL === cancelActive) ACTIVE_ROLE_CANCEL = null;
     let val = (inp.value || '').trim();
     if (commit && val === '__custom__') {
       const custom = promptCustomRole(old);
@@ -988,11 +990,18 @@ async function startEditMemberTitle(card) {
     }
     render(); renderDiff();
   };
+  const cancelActive = () => finish(false);
+  ACTIVE_ROLE_CANCEL = cancelActive;
   inp.addEventListener('change', () => finish(true));
   inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') finish(true); else if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+  inp.addEventListener('keyup', (e) => { if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
   inp.addEventListener('blur', () => finish(true));
   inp.addEventListener('mousedown', (e) => e.stopPropagation());
   inp.addEventListener('click', (e) => e.stopPropagation());
+  if (cancelBtn) {
+    cancelBtn.onmousedown = (e) => { e.preventDefault(); e.stopPropagation(); };
+    cancelBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(false); };
+  }
   inp.addEventListener('dragstart', (e) => e.preventDefault());
 }
 
@@ -1029,6 +1038,7 @@ function titleOptions() {
 
 let ROLE_OPTIONS_CACHE = null;
 let ROLE_OPTIONS_META = { roleTable: '', roleUrl: '', source: '' };
+let ACTIVE_ROLE_CANCEL = null;
 function roleOption(name, source = 'Lark実値', status = '候補', description = '') {
   return { name: String(name || '').trim(), source, status: String(status || ''), description: String(description || '') };
 }
@@ -1070,12 +1080,8 @@ async function loadRoleOptions() {
 function rolePickerHelpHtml(compact = false, id = '') {
   const master = ROLE_OPTIONS_META.roleUrl
     ? `<a href="${esc(ROLE_OPTIONS_META.roleUrl)}" target="_blank" rel="noopener noreferrer">役職マスタを開く ↗</a>`
-    : '<span class="role-help-muted">役職マスタ未設定</span>';
-  return `<div class="role-help ${compact ? 'compact' : ''}"${id ? ` id="${esc(id)}"` : ''}>
-    <span>候補: 役職マスタ + Lark 実値</span>
-    ${master}
-    <span>手入力はマスタに追加されません。</span>
-  </div>`;
+    : '役職マスタ未設定。手入力はマスタ未登録です。';
+  return `<div class="role-help ${compact ? 'compact' : ''}"${id ? ` id="${esc(id)}"` : ''}>${master}</div>`;
 }
 
 function optionLabel(opt) {
@@ -1094,7 +1100,7 @@ function titleSelectHtml(currentValue, className = 'role-select', options = titl
     ['現在 Lark で使用中', opts.filter(o => o.source !== '役職マスタ' && o.source !== '現在値' && !isDeprecated(o))],
     ['現在値・非推奨', opts.filter(o => o.source === '現在値' || isDeprecated(o))]
   ].filter(([, list]) => list.length);
-  return `<select${id ? ` id="${esc(id)}"` : ''} class="${className}" aria-label="役職を選択"${describedBy ? ` aria-describedby="${esc(describedBy)}"` : ''}>
+  return `<select${id ? ` id="${esc(id)}"` : ''} class="${className}" aria-label="役職を選択" title="候補は役職マスタと現在の Lark 実値から作成します"${describedBy ? ` aria-describedby="${esc(describedBy)}"` : ''}>
     <option value="">役職なし</option>
     ${groups.map(([label, list]) => `<optgroup label="${esc(label)}">${list.map(o => `<option value="${esc(o.name)}"${roleKey(o.name) === roleKey(current) ? ' selected' : ''} title="${esc(o.description || '')}">${esc(optionLabel(o))}</option>`).join('')}</optgroup>`).join('')}
     <option value="__custom__">手入力…（役職マスタには追加されません）</option>
@@ -1106,38 +1112,50 @@ function promptCustomRole(currentValue = '') {
 }
 
 function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', options = null) {
-  const valEl = row.querySelector('.dt-val') || row;
-  if (!valEl || valEl.querySelector('input')) return;
+  if (!row || row.tagName === 'BUTTON') return;
+  const valEl = row.querySelector('.dt-val');
+  if (!valEl || valEl.querySelector('input,select')) return;
+  row.classList.add('editing');
   const listId = options ? `dl-${Date.now()}-${Math.random().toString(36).slice(2)}` : '';
-  valEl.innerHTML = `<input class="oc-rename-input dt-inline-input" placeholder="${esc(placeholder)}" value="${esc(currentValue || '')}"${listId ? ` list="${listId}"` : ''}>${listId ? `<datalist id="${listId}"><option value="">役職なし</option>${options.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>` : ''}`;
+  valEl.innerHTML = `<input class="oc-rename-input dt-inline-input" placeholder="${esc(placeholder)}" value="${esc(currentValue || '')}"${listId ? ` list="${listId}"` : ''}>${listId ? `<datalist id="${listId}"><option value="">役職なし</option>${options.map(v => `<option value="${esc(v)}"></option>`).join('')}</datalist>` : ''}<div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div>`;
   const inp = valEl.querySelector('input');
+  const saveBtn = valEl.querySelector('.dt-save');
+  const cancelBtn = valEl.querySelector('.dt-cancel');
   inp.focus(); inp.select();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
+    row.classList.remove('editing');
     if (commit) onCommit(inp.value);
     else showDetail(SELECTED.kind, SELECTED.id);
   };
+  saveBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(true); };
+  cancelBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(false); };
   inp.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Enter') finish(true);
-    else if (e.key === 'Escape') finish(false);
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
-  inp.addEventListener('blur', () => finish(true));
   inp.addEventListener('mousedown', (e) => e.stopPropagation());
   inp.addEventListener('click', (e) => e.stopPropagation());
 }
 
 async function startDetailSelectEdit(row, currentValue, onCommit) {
-  const valEl = row.querySelector('.dt-val') || row;
+  if (!row || row.tagName === 'BUTTON') return;
+  const valEl = row.querySelector('.dt-val');
   if (!valEl || valEl.querySelector('select')) return;
+  row.classList.add('editing');
   const helpId = `role-help-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  valEl.innerHTML = `${titleSelectHtml(currentValue, 'role-select dt-role-select', await loadRoleOptions(), helpId)}${rolePickerHelpHtml(true, helpId)}`;
+  valEl.innerHTML = `<div class="role-edit-wrap">${titleSelectHtml(currentValue, 'role-select dt-role-select', await loadRoleOptions(), helpId)}<div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div></div>${rolePickerHelpHtml(true, helpId)}`;
   const selEl = valEl.querySelector('select');
+  const saveBtn = valEl.querySelector('.dt-save');
+  const cancelBtn = valEl.querySelector('.dt-cancel');
   selEl.focus();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
+    if (ACTIVE_ROLE_CANCEL === cancelActive) ACTIVE_ROLE_CANCEL = null;
+    row.classList.remove('editing');
     if (commit) {
       let val = selEl.value;
       if (val === '__custom__') {
@@ -1148,13 +1166,16 @@ async function startDetailSelectEdit(row, currentValue, onCommit) {
     }
     else showDetail(SELECTED.kind, SELECTED.id);
   };
-  selEl.addEventListener('change', () => finish(true));
+  const cancelActive = () => finish(false);
+  ACTIVE_ROLE_CANCEL = cancelActive;
+  saveBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(true); };
+  cancelBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(false); };
   selEl.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Enter') finish(true);
     else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
-  selEl.addEventListener('blur', () => finish(true));
+  selEl.addEventListener('keyup', (e) => { if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
   selEl.addEventListener('mousedown', (e) => e.stopPropagation());
   selEl.addEventListener('click', (e) => e.stopPropagation());
 }
@@ -1327,6 +1348,12 @@ $('move-concurrent').onclick = toggleConcurrent;
 $('move-clear').onclick = completeLeaderClear;
 $('move-cancel').onclick = cancelMove;
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && ACTIVE_ROLE_CANCEL) {
+    ACTIVE_ROLE_CANCEL();
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   if (e.key !== 'Escape') return;
   const hasEditMode = moveState || !$('addMenu').hidden || !$('leaderBar').hidden || !$('addBar').hidden;
   if (!hasEditMode) return;
@@ -3035,7 +3062,7 @@ $('detail-body').addEventListener('click', (e) => {
   const edit = e.target.closest('.dt-edit-btn[data-edit-field]');
   if (edit) {
     e.stopPropagation();
-    const row = edit.closest('[data-edit-field]');
+    const row = edit.parentElement && edit.parentElement.closest('.dt-row[data-edit-field], .dt-sub[data-edit-field]');
     if (edit.dataset.editField === 'deptName') startDetailDeptNameEdit(row);
     if (edit.dataset.editField === 'memberTitle') startDetailMemberTitleEdit(row);
     return;
@@ -3044,7 +3071,7 @@ $('detail-body').addEventListener('click', (e) => {
   const r = e.target.closest('.dt-mrow[data-detail]'); if (r) showDetail('member', r.dataset.detail);
 });
 $('detail-body').addEventListener('dblclick', (e) => {
-  const row = e.target.closest('[data-edit-field]');
+  const row = e.target.closest('.dt-row[data-edit-field], .dt-sub[data-edit-field]');
   if (!row) return;
   if (row.dataset.editField === 'deptName') startDetailDeptNameEdit(row);
   if (row.dataset.editField === 'memberTitle') startDetailMemberTitleEdit(row);
@@ -3160,7 +3187,9 @@ function showDetail(kind, id) {
   const baRow = (lbl, b, a, editField = '') => {
     const editAttrs = editField ? ` data-edit-field="${editField}" title="編集できます"` : '';
     const cls = `dt-row${b === a ? '' : ' dt-changed'}${editField ? ' dt-editable' : ''}`;
-    const val = b === a ? esc(a || 'なし') : `<s>${esc(b || 'なし')}</s> <span class="arrow">→</span> <b>${esc(a || 'なし')}</b>`;
+    const empty = lbl === '役職' ? '役職なし' : 'なし';
+    const fmt = (v) => (lbl === '役職' && (!v || v === 'なし')) ? '役職なし' : (v || empty);
+    const val = b === a ? esc(fmt(a)) : `<s>${esc(fmt(b))}</s> <span class="arrow">→</span> <b>${esc(fmt(a))}</b>`;
     const editBtn = editField ? `<button class="dt-edit-btn" type="button" data-edit-field="${editField}">編集</button>` : '';
     return `<div class="${cls}"${editAttrs}><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span>${editBtn}</div>`;
   };
@@ -3187,7 +3216,7 @@ function showDetail(kind, id) {
     const state = m.isNew ? '<span class="stchip st-green">新規（下書き）</span>' : m.deleted ? '<span class="stchip st-red">削除予定（下書き）</span>' : (memChanged(m) || memUpdated(m)) ? '<span class="stchip st-amber">変更あり（下書き）</span>' : '<span class="stchip st-gray">変更なし</span>';
     box.innerHTML =
       `<div class="dt-head"><span class="dt-avatar">${esc(initials(m.name))}</span>
-         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub dt-title-edit" data-edit-field="memberTitle" title="役職を編集できます">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''} <button class="dt-edit-btn mini" type="button" data-edit-field="memberTitle">編集</button></div></div></div>` +
+         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''}</div></div></div>` +
       baRow('所属部門', [...m.origDeptIds].map(deptNameById).join('、') || 'なし', [...m.deptIds].map(deptNameById).join('、') || 'なし') +
       baRow('役職', m.origTitle || 'なし', m.title || 'なし', m.deleted ? '' : 'memberTitle') +
       baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし') +

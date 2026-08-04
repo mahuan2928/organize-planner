@@ -924,30 +924,48 @@ body {
 }
 .dt-name { font-size: 14.5px; font-weight: 750; }
 .dt-sub { font-size: 11px; color: var(--ink-3); margin-top: 3px; display: flex; gap: 6px; align-items: center; }
-.dt-title-edit { cursor: text; border-radius: 7px; padding: 2px 5px; margin-left: -5px; }
-.dt-title-edit:hover { background: var(--surface-2); color: var(--ink-2); }
 .dt-edit-btn { margin-left: auto; flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink-3); border-radius: 999px; padding: 1px 7px; font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; }
 .dt-edit-btn:hover { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-bg); }
 .dt-edit-btn.mini { margin-left: 6px; padding: 0 6px; vertical-align: 1px; }
 .dt-row { display: flex; gap: 10px; padding: 7px 2px; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
-.dt-lbl { flex: none; width: 84px; color: var(--ink-3); font-size: 11.5px; font-weight: 600; }
-.dt-val { min-width: 0; }
+.dt-lbl { flex: none; min-width: 76px; color: var(--ink-3); font-size: 11.5px; font-weight: 600; }
+.dt-val { flex: 1 1 auto; min-width: 0; }
+.dt-row.editing { flex-direction: column; align-items: stretch; gap: 6px; }
+.dt-row.editing .dt-edit-btn { display: none; }
+.dt-row.editing .dt-val { width: 100%; }
 .dt-editable { cursor: text; border-radius: 8px; padding-left: 6px; padding-right: 6px; margin-left: -6px; margin-right: -6px; }
 .dt-editable:hover { background: var(--surface-2); border-bottom-color: transparent; }
-.dt-inline-input { width: min(260px, 100%); height: 30px; }
+.dt-inline-input { width: 100%; min-height: 32px; }
 .role-select {
-  width: 220px; max-width: 100%; height: 32px; box-sizing: border-box;
-  border: 1px solid var(--line-strong); border-radius: 8px; background: #fff;
-  color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 9px;
+  appearance: none; -webkit-appearance: none;
+  width: 200px; max-width: 100%; height: 30px; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: #fff linear-gradient(45deg, transparent 50%, var(--ink-3) 50%) right 12px center / 6px 6px no-repeat;
+  color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 26px 0 9px;
 }
-.role-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
-.dt-role-select { width: min(200px, 100%); height: 30px; }
-.oc-title-input.role-select { width: min(210px, 100%); height: 30px; }
+.role-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.10); }
+.dt-role-select { width: 100%; min-height: 32px; }
+.oc-title-input.role-select { width: min(190px, 100%); height: 30px; }
+.role-edit-wrap { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.dt-row.editing .role-edit-wrap { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
+.dt-edit-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.dt-save, .dt-cancel {
+  height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink-2); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
+}
+.dt-save { background: var(--primary); color: #fff; border-color: var(--primary); }
+.dt-save:hover { filter: brightness(.96); }
+.dt-cancel:hover { color: var(--danger); border-color: var(--danger-line); background: var(--danger-bg); }
+.role-cancel {
+  height: 26px; padding: 0 7px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); color: var(--ink-3); font: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
+}
+.role-cancel:hover { color: var(--danger); border-color: var(--danger-line); background: var(--danger-bg); }
 .role-help {
-  margin-top: 5px; max-width: 240px; display: flex; flex-direction: column; gap: 2px;
-  font-size: 10.5px; line-height: 1.4; color: var(--ink-3); overflow-wrap: anywhere;
+  margin-top: 2px; width: 100%; display: block;
+  font-size: 10.5px; line-height: 1.35; color: var(--ink-3); overflow-wrap: anywhere;
 }
-.role-help.compact { max-width: 240px; }
+.role-help.compact { max-width: none; }
 .role-help a { width: fit-content; color: var(--primary); text-decoration: none; font-weight: 700; }
 .role-help a:hover { text-decoration: underline; }
 .role-help-muted { color: var(--warn); font-weight: 700; }
@@ -1354,6 +1372,11 @@ body {
 @media (max-width: 1180px) {
   .side-panel { width: 320px; }
   .statuschips { display: none; }
+}
+@media (max-width: 340px) {
+  .dt-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .dt-lbl { min-width: 0; }
+  .dt-val { width: 100%; }
 }
 /* 狭い画面: サイドパネルは右からのスライドオーバーに（トグルで開閉） */
 .panel-toggle {
