@@ -936,6 +936,13 @@ body {
 .dt-editable { cursor: text; border-radius: 8px; padding-left: 6px; padding-right: 6px; margin-left: -6px; margin-right: -6px; }
 .dt-editable:hover { background: var(--surface-2); border-bottom-color: transparent; }
 .dt-inline-input { width: 100%; min-height: 32px; }
+.detail-select {
+  appearance: none; -webkit-appearance: none; width: 100%; min-height: 32px; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: #fff linear-gradient(45deg, transparent 50%, var(--ink-3) 50%) right 12px center / 6px 6px no-repeat;
+  color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 600; padding: 0 26px 0 9px;
+}
+.detail-select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,.10); }
 .role-select {
   appearance: none; -webkit-appearance: none;
   width: 200px; max-width: 100%; height: 30px; box-sizing: border-box;

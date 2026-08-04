@@ -1021,6 +1021,28 @@ function updateMemberTitleDraft(memId, nextTitle) {
   return true;
 }
 
+function leaderOptionsFor(memId) {
+  return [...MEMBERS.values()]
+    .filter(x => !x.deleted && x.id !== memId && !leaderCycle(memId, x.id))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'ja'));
+}
+
+function updateMemberLeaderDraft(memId, nextLeaderId) {
+  const m = MEMBERS.get(memId);
+  const nextId = nextLeaderId || null;
+  if (!m || m.deleted) return false;
+  if (nextId === m.id || (nextId && leaderCycle(memId, nextId))) return false;
+  if ((m.leaderId || null) === nextId) return false;
+  const oldName = MEMBERS.get(m.leaderId)?.name || 'なし';
+  const nextName = MEMBERS.get(nextId)?.name || 'なし';
+  m.leaderId = nextId;
+  PLAN = null; markEdited();
+  logHist('下書き編集', `「${m.name}」の上長: ${oldName} → ${nextName}`);
+  render(); renderDiff(); showDetail('member', memId);
+  showToast(`「${m.name}」の上長を「${nextName}」に変更する内容を下書きに追加しました。`);
+  return true;
+}
+
 function editMemberTitle(memId) {
   const m = MEMBERS.get(memId);
   if (!m || m.deleted) return;
@@ -1107,6 +1129,14 @@ function titleSelectHtml(currentValue, className = 'role-select', options = titl
   </select>`;
 }
 
+function leaderSelectHtml(currentLeaderId, memId) {
+  const opts = leaderOptionsFor(memId);
+  return `<select class="detail-select dt-leader-select" aria-label="上長を選択">
+    <option value="">上長なし</option>
+    ${opts.map(m => `<option value="${esc(m.id)}"${m.id === currentLeaderId ? ' selected' : ''}>${esc(m.name)}${m.title ? `（${esc(m.title)}）` : ''}</option>`).join('')}
+  </select>`;
+}
+
 function promptCustomRole(currentValue = '') {
   return window.prompt('新しい役職を入力してください。\\n※ 手入力した役職は自動では役職マスタに追加されません。正式候補にする場合は役職マスタで管理してください。', currentValue || '');
 }
@@ -1126,7 +1156,10 @@ function startDetailInlineEdit(row, currentValue, onCommit, placeholder = '', op
   const finish = (commit) => {
     if (done) return; done = true;
     row.classList.remove('editing');
-    if (commit) onCommit(inp.value);
+    if (commit) {
+      const changed = onCommit(inp.value);
+      if (changed === false) showDetail(SELECTED.kind, SELECTED.id);
+    }
     else showDetail(SELECTED.kind, SELECTED.id);
   };
   saveBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(true); };
@@ -1162,7 +1195,8 @@ async function startDetailSelectEdit(row, currentValue, onCommit) {
         const custom = promptCustomRole(currentValue || '');
         val = custom == null ? currentValue : custom.trim();
       }
-      onCommit(val);
+      const changed = onCommit(val);
+      if (changed === false) showDetail(SELECTED.kind, SELECTED.id);
     }
     else showDetail(SELECTED.kind, SELECTED.id);
   };
@@ -1192,6 +1226,40 @@ function startDetailMemberTitleEdit(row) {
   const m = MEMBERS.get(SELECTED.id);
   if (!m || m.deleted) return;
   startDetailSelectEdit(row, m.title || '', (val) => updateMemberTitleDraft(m.id, val));
+}
+
+function startDetailMemberLeaderEdit(row) {
+  if (!SELECTED || SELECTED.kind !== 'member') return;
+  const m = MEMBERS.get(SELECTED.id);
+  if (!m || m.deleted || !row || row.tagName === 'BUTTON') return;
+  const valEl = row.querySelector('.dt-val');
+  if (!valEl || valEl.querySelector('input,select')) return;
+  row.classList.add('editing');
+  valEl.innerHTML = `<div class="role-edit-wrap">${leaderSelectHtml(m.leaderId || '', m.id)}<div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div></div>`;
+  const selEl = valEl.querySelector('select');
+  let done = false;
+  const finish = (commit) => {
+    if (done) return; done = true;
+    row.classList.remove('editing');
+    if (ACTIVE_ROLE_CANCEL === cancelActive) ACTIVE_ROLE_CANCEL = null;
+    if (commit) {
+      const changed = updateMemberLeaderDraft(m.id, selEl.value || null);
+      if (changed === false) showDetail('member', m.id);
+    } else showDetail('member', m.id);
+  };
+  const cancelActive = () => finish(false);
+  ACTIVE_ROLE_CANCEL = cancelActive;
+  valEl.querySelector('.dt-save').onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(true); };
+  valEl.querySelector('.dt-cancel').onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(false); };
+  selEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  selEl.addEventListener('keyup', (e) => { if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
+  selEl.addEventListener('mousedown', (e) => e.stopPropagation());
+  selEl.addEventListener('click', (e) => e.stopPropagation());
+  selEl.focus();
 }
 
 // ================= 移動モード（クリック2ステップ・遠距離対応）=================
@@ -3065,6 +3133,7 @@ $('detail-body').addEventListener('click', (e) => {
     const row = edit.parentElement && edit.parentElement.closest('.dt-row[data-edit-field], .dt-sub[data-edit-field]');
     if (edit.dataset.editField === 'deptName') startDetailDeptNameEdit(row);
     if (edit.dataset.editField === 'memberTitle') startDetailMemberTitleEdit(row);
+    if (edit.dataset.editField === 'memberLeader') startDetailMemberLeaderEdit(row);
     return;
   }
   const c = e.target.closest('.dt-crow[data-detail-dept]'); if (c) { showDetail('dept', c.dataset.detailDept); return; }   // 子部門へドリル
@@ -3075,6 +3144,7 @@ $('detail-body').addEventListener('dblclick', (e) => {
   if (!row) return;
   if (row.dataset.editField === 'deptName') startDetailDeptNameEdit(row);
   if (row.dataset.editField === 'memberTitle') startDetailMemberTitleEdit(row);
+  if (row.dataset.editField === 'memberLeader') startDetailMemberLeaderEdit(row);
 });
 $('fb-back').onclick = focusUp;
 $('fb-siblings').onchange = (e) => setFocus(e.target.value);
@@ -3219,7 +3289,7 @@ function showDetail(kind, id) {
          <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''}</div></div></div>` +
       baRow('所属部門', [...m.origDeptIds].map(deptNameById).join('、') || 'なし', [...m.deptIds].map(deptNameById).join('、') || 'なし') +
       baRow('役職', m.origTitle || 'なし', m.title || 'なし', m.deleted ? '' : 'memberTitle') +
-      baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし') +
+      baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし', 'memberLeader') +
       (m.email ? row('メール', esc(m.email)) : '') +
       `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">組織図で表示</button>${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">異動先を選択</button>`}</div>`;
   }
