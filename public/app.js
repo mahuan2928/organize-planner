@@ -1137,13 +1137,6 @@ function leaderOptionSearchText(m) {
   return `${m.name || ''} ${m.title || ''} ${[...m.deptIds].map(deptNameById).join(' ')}`.normalize('NFKC').toLowerCase();
 }
 
-function leaderSelectHtml(currentLeaderId, memId, options = leaderOptionsFor(memId)) {
-  return `<select class="detail-select dt-leader-select" aria-label="上長を選択">
-    <option value="">上長なし</option>
-    ${options.map(m => `<option value="${esc(m.id)}"${m.id === currentLeaderId ? ' selected' : ''}>${esc(leaderOptionLabel(m))}</option>`).join('')}
-  </select>`;
-}
-
 function promptCustomRole(currentValue = '') {
   return window.prompt('新しい役職を入力してください。\\n※ 手入力した役職は自動では役職マスタに追加されません。正式候補にする場合は役職マスタで管理してください。', currentValue || '');
 }
@@ -1243,24 +1236,26 @@ function startDetailMemberLeaderEdit(row) {
   if (!valEl || valEl.querySelector('input,select')) return;
   row.classList.add('editing');
   const allLeaders = leaderOptionsFor(m.id);
-  valEl.innerHTML = `<div class="role-edit-wrap"><input class="detail-search dt-leader-search" type="search" placeholder="上長を検索（氏名・役職・部門）" aria-label="上長候補を検索">${leaderSelectHtml(m.leaderId || '', m.id, allLeaders)}<div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div></div>`;
+  valEl.innerHTML = `<div class="role-edit-wrap"><div class="leader-combo" role="combobox" aria-expanded="true"><input class="detail-search dt-leader-search" type="search" placeholder="上長を検索（氏名・役職・部門）" aria-label="上長候補を検索"><div class="leader-options" role="listbox"></div></div><div class="dt-edit-actions"><button class="dt-save" type="button">保存</button><button class="dt-cancel" type="button">キャンセル</button></div></div>`;
   const searchEl = valEl.querySelector('.dt-leader-search');
-  const selEl = valEl.querySelector('select');
+  const optionsEl = valEl.querySelector('.leader-options');
+  let selectedLeaderId = m.leaderId || '';
   const renderLeaderOptions = () => {
     const q = String(searchEl.value || '').normalize('NFKC').trim().toLowerCase();
-    const current = selEl.value;
     const filtered = q ? allLeaders.filter(x => leaderOptionSearchText(x).includes(q)) : allLeaders;
-    const currentLeader = current ? allLeaders.find(x => x.id === current) : null;
-    const visible = currentLeader && !filtered.some(x => x.id === current) ? [currentLeader, ...filtered] : filtered;
-    selEl.innerHTML = `<option value=""${current ? '' : ' selected'}>上長なし</option>${visible.map(x => `<option value="${esc(x.id)}"${x.id === current ? ' selected' : ''}>${esc(leaderOptionLabel(x))}</option>`).join('')}`;
+    const currentLeader = selectedLeaderId ? allLeaders.find(x => x.id === selectedLeaderId) : null;
+    const visible = currentLeader && !filtered.some(x => x.id === selectedLeaderId) ? [currentLeader, ...filtered] : filtered;
+    const noneCls = selectedLeaderId ? '' : ' selected';
+    optionsEl.innerHTML = `<button type="button" class="leader-option${noneCls}" data-id="" role="option" aria-selected="${selectedLeaderId ? 'false' : 'true'}">上長なし</button>${visible.map(x => `<button type="button" class="leader-option${x.id === selectedLeaderId ? ' selected' : ''}" data-id="${esc(x.id)}" role="option" aria-selected="${x.id === selectedLeaderId ? 'true' : 'false'}"><span>${esc(leaderOptionLabel(x))}</span>${[...x.deptIds].length ? `<small>${esc([...x.deptIds].map(deptNameById).join('、'))}</small>` : ''}</button>`).join('')}`;
   };
+  renderLeaderOptions();
   let done = false;
   const finish = (commit) => {
     if (done) return; done = true;
     row.classList.remove('editing');
     if (ACTIVE_ROLE_CANCEL === cancelActive) ACTIVE_ROLE_CANCEL = null;
     if (commit) {
-      const changed = updateMemberLeaderDraft(m.id, selEl.value || null);
+      const changed = updateMemberLeaderDraft(m.id, selectedLeaderId || null);
       if (changed === false) showDetail('member', m.id);
     } else showDetail('member', m.id);
   };
@@ -1269,20 +1264,21 @@ function startDetailMemberLeaderEdit(row) {
   searchEl.addEventListener('input', renderLeaderOptions);
   searchEl.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); selEl.focus(); }
+    if (e.key === 'Enter') { e.preventDefault(); }
     else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
   });
+  optionsEl.addEventListener('click', (e) => {
+    const opt = e.target.closest('.leader-option');
+    if (!opt) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selectedLeaderId = opt.dataset.id || '';
+    renderLeaderOptions();
+  });
+  optionsEl.addEventListener('mousedown', (e) => e.stopPropagation());
   valEl.querySelector('.dt-save').onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(true); };
   valEl.querySelector('.dt-cancel').onclick = (e) => { e.preventDefault(); e.stopPropagation(); finish(false); };
-  selEl.addEventListener('keydown', (e) => {
-    e.stopPropagation();
-    if (e.key === 'Enter') finish(true);
-    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-  });
-  selEl.addEventListener('keyup', (e) => { if (e.key === 'Escape') { e.preventDefault(); finish(false); } });
-  selEl.addEventListener('mousedown', (e) => e.stopPropagation());
-  selEl.addEventListener('click', (e) => e.stopPropagation());
-  selEl.focus();
+  searchEl.focus();
 }
 
 // ================= 移動モード（クリック2ステップ・遠距離対応）=================
