@@ -2,6 +2,7 @@
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const initials = (s) => String(s || '?').trim().slice(0, 1);
+const tt = (key, params) => (window.OrgI18n ? window.OrgI18n.t(key, params) : key);
 
 const PALETTE = ['#7c5cff', '#2f80ed', '#17b3a3', '#f2994a', '#eb5757', '#27ae60', '#e84393', '#00a3bf', '#8e44ad', '#d98d00'];
 const ROOT_ID = '__root__';
@@ -32,6 +33,8 @@ let moveState = null;        // メンバー異動モード {memId, srcDept}
 // ---- ワークベンチ UI 状態（表示層のみ・業務ロジックには影響しない）----
 const HIST = [];             // 操作履歴（セッション内） [{time, action, detail}]
 let LAST_SYNC = null;        // 最終同期時刻
+let LAST_STATS = null;       // 最終読み込みの件数（言語切替時の表示更新用）
+let LAST_CACHE_META = null;  // 最終読み込みのキャッシュ状態（言語切替時の表示更新用）
 let LAST_EDIT = null;        // 草稿の最終編集時刻
 let SELECTED = null;         // 詳細パネルの選択対象 {kind:'dept'|'member', id}
 const fmtTime = (d) => d ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : '--:--';
@@ -62,9 +65,10 @@ function softColor(hex) {
 function renderCacheStatus(d) {
   const el = $('cacheStatus');
   if (!el) return;
+  LAST_CACHE_META = d;
   const status = d.cacheStatus || '';
   const generated = d.generatedAt ? new Date(d.generatedAt) : null;
-  const label = status === 'hit' ? 'キャッシュ' : status === 'stale' ? '古いキャッシュ・更新中' : status === 'force' ? '強制同期' : status === 'miss' ? '最新取得' : '';
+  const label = status === 'hit' ? tt('cache.hit') : status === 'stale' ? tt('cache.stale') : status === 'force' ? tt('cache.force') : status === 'miss' ? tt('cache.miss') : '';
   el.hidden = !label;
   el.textContent = label ? `${label}${generated ? ` ${fmtTime(generated)}` : ''}` : '';
   el.className = `cache-status ${status ? `cache-${status}` : ''}`;
@@ -80,21 +84,22 @@ async function load(force = false) {
     const d = await readApiJson(res, '/api/org');
     // 本番（Worker）ではログイン必須。未ログイン/期限切れならログイン画面へ誘導する
     if (res.status === 401 && d.needLogin) { location.href = '/auth/login'; return; }
-    if (res.status === 403) { showAuthError(d.error || '管理者権限が必要です'); return; }
+    if (res.status === 403) { showAuthError(d.error || tt('error.adminPermissionRequired')); return; }
     if (!d.ok) {
-      const err = new Error(d.error || '取得に失敗しました');
+      const err = new Error(d.error || tt('error.fetchFailed.short'));
       err.code = d.code;
       err.base = d.base;
       throw err;
     }
     $('baselink').href = d.base;
     BASE_URL = d.base || '';   // 台帳リンクはサーバー設定から受け取る（テナント固有値をコードに埋め込まない）
-    $('stats').textContent = `部門 ${d.stats.depts}件 ・ メンバー ${d.stats.members}名`;
+    LAST_STATS = d.stats;
+    $('stats').textContent = tt('stats.loaded', { depts: d.stats.depts, members: d.stats.members });
     LAST_SYNC = d.generatedAt ? new Date(d.generatedAt) : new Date();
     $('syncTime').textContent = fmtTime(LAST_SYNC);
     $('syncDot').className = 'sync-dot ok';
     renderCacheStatus(d);
-    logHist('同期', `${d.cacheStatus === 'hit' || d.cacheStatus === 'stale' ? 'キャッシュから表示' : 'Lark / Base から組織を同期'}（部門 ${d.stats.depts} ・ メンバー ${d.stats.members}）`);
+    logHist(tt('hist.sync'), tt(d.cacheStatus === 'hit' || d.cacheStatus === 'stale' ? 'hist.syncCache' : 'hist.syncLive', { depts: d.stats.depts, members: d.stats.members }));
     NODES = buildFlat(d);
     ORIG.clear(); NODES.forEach(n => { if (n.type === 'dept') ORIG.set(n.id, n.parentId); });
     MEMBERS.clear();
@@ -117,7 +122,7 @@ async function load(force = false) {
     $('syncDot').className = 'sync-dot ng';
     renderSyncError(e);
     $('syncFail').hidden = false;
-    logHist('同期失敗', String((e && e.message) || e));
+    logHist(tt('hist.syncFailed'), String((e && e.message) || e));
   }
 }
 $('retryBtn') && ($('retryBtn').onclick = load);
@@ -128,15 +133,15 @@ function apiErrorInfo(e) {
   const base = (e && e.base) || BASE_URL || '';
   if (String(code) === '91403' || /you don't have permission/i.test(raw)) {
     return {
-      title: 'Base 台帳へのアクセス権限がありません',
-      body: 'このツールは、ログイン中のユーザー権限で Base 台帳を読み書きします。Base の所有者または管理者に依頼して、協力者として追加してもらってください。',
-      action: base ? { href: base, label: 'Base 台帳を開いて権限申請' } : null,
+      title: tt('error.basePermission.title'),
+      body: tt('error.basePermission.body'),
+      action: base ? { href: base, label: tt('error.basePermission.action') } : null,
       detail: code ? `Lark ${code}: you don't have permission` : raw
     };
   }
   return {
-    title: 'データの取得に失敗しました',
-    body: '時間をおいて再度お試しください。問題が続く場合は管理者にお問い合わせください。',
+    title: tt('error.fetchFailed.title'),
+    body: tt('error.fetchFailed.body'),
     action: null,
     detail: raw
   };
@@ -147,17 +152,17 @@ function renderSyncError(e) {
     `<div class="sf-main">${esc(info.title)}</div>` +
     `<div class="sf-help">${esc(info.body)}</div>` +
     (info.action ? `<a class="sf-link" href="${esc(info.action.href)}" target="_blank" rel="noopener">${esc(info.action.label)} ↗</a>` : '') +
-    `<details class="sf-detail"><summary>詳細</summary><div>${esc(info.detail)}</div></details>`;
+    `<details class="sf-detail"><summary>${esc(tt('common.detail'))}</summary><div>${esc(info.detail)}</div></details>`;
 }
 
 // 権限エラー（管理者以外）: 再試行しても無駄なので、専用の案内を出す
 function showAuthError(msg) {
   $('skeleton').hidden = true;
   $('syncDot').className = 'sync-dot ng';
-  $('syncFailMsg').textContent = msg + '\nこのツールは管理者権限をお持ちの方専用です。';
+  $('syncFailMsg').textContent = `${msg}\n${tt('error.adminOnly')}`;
   $('syncFail').hidden = false;
   const btn = $('retryBtn');
-  if (btn) { btn.textContent = '別のアカウントでログイン'; btn.onclick = () => { location.href = '/auth/logout'; }; }
+  if (btn) { btn.textContent = tt('auth.loginOther'); btn.onclick = () => { location.href = '/auth/logout'; }; }
 }
 
 // ログイン中のユーザーを表示（本番のみ。ローカル開発では /api/me が無くても無視）
@@ -180,44 +185,44 @@ let onboardingAutoQueued = false;
 let onboardingResize = null;
 const ONBOARDING_STEPS = [
   {
-    title: '組織プランナーへようこそ',
-    body: 'このガイドでは、実際の組織変更に近い流れで使い方を確認します。',
-    tasks: ['対象を検索する', '組織構造を確認する', 'ドラッグで下書きを作る', '差分とリスクを確認する', '実行プランを保存・確認する'],
-    safe: '所要時間は約 1 分です。実行するまで、Lark 側の正式な組織は変更されません。'
+    title: 'onboarding.0.title',
+    body: 'onboarding.0.body',
+    tasks: ['onboarding.0.task1', 'onboarding.0.task2', 'onboarding.0.task3', 'onboarding.0.task4', 'onboarding.0.task5'],
+    safe: 'onboarding.0.safe'
   },
   {
     selector: '#search',
-    title: '1. 変更したい部門を探す',
-    body: 'まずは検索で対象部門やメンバーを見つけます。大きな組織では、全体を眺めるより検索から始めると迷いにくくなります。',
-    tasks: ['部門名またはメンバー名を入力', '候補を選択して組織図へ移動', '右側の詳細パネルで所属を確認']
+    title: 'onboarding.1.title',
+    body: 'onboarding.1.body',
+    tasks: ['onboarding.1.task1', 'onboarding.1.task2', 'onboarding.1.task3']
   },
   {
     selector: '#chartWrap',
-    title: '2. 構造を確認して下書きを作る',
-    body: '中央のキャンバスで、親部門・子部門・所属メンバーを確認します。',
-    tasks: ['部門をクリックして展開', '必要に応じて「全員」に切り替え', '部門やメンバーをドラッグして下書きを作成'],
-    safe: 'ここで作成されるのは下書きです。まだ Lark には反映されません。'
+    title: 'onboarding.2.title',
+    body: 'onboarding.2.body',
+    tasks: ['onboarding.2.task1', 'onboarding.2.task2', 'onboarding.2.task3'],
+    safe: 'onboarding.2.safe'
   },
   {
     selector: '#sidePanel',
-    title: '3. 差分とリスクを確認する',
-    body: '右側のパネルには、下書きで発生した変更が一覧化されます。',
-    tasks: ['移動・責任者変更・削除予定を確認', '詳細タブで Before / After を確認', '不要な変更があれば破棄または戻す']
+    title: 'onboarding.3.title',
+    body: 'onboarding.3.body',
+    tasks: ['onboarding.3.task1', 'onboarding.3.task2', 'onboarding.3.task3']
   },
   {
     selector: '#actionMain',
-    title: '4. 実行プランを保存する',
-    body: '変更があると、右上の主ボタンから実行プランを保存できます。',
-    tasks: ['変更件数を確認', '計画名を入力', '保存後に実行前レビューへ進む'],
-    safe: '実行プランの保存だけでは Lark 組織は変更されません。'
+    title: 'onboarding.4.title',
+    body: 'onboarding.4.body',
+    tasks: ['onboarding.4.task1', 'onboarding.4.task2', 'onboarding.4.task3'],
+    safe: 'onboarding.4.safe'
   },
   {
     selector: '#actionMain',
-    title: '5. 最後に実行する',
-    body: '実行が、正式な Lark 反映の最終ステップです。',
-    tasks: ['実行対象件数を確認', '削除や大きな異動がないか確認', '問題なければ実行する'],
-    safe: '不安な場合は、確定前に右側の「変更内容」をもう一度確認してください。',
-    finalCta: '検索へ進む'
+    title: 'onboarding.5.title',
+    body: 'onboarding.5.body',
+    tasks: ['onboarding.5.task1', 'onboarding.5.task2', 'onboarding.5.task3'],
+    safe: 'onboarding.5.safe',
+    finalCta: 'onboarding.finalCta'
   }
 ];
 
@@ -279,17 +284,17 @@ function renderOnboarding() {
     <div class="ob-backdrop"></div>
     <div class="ob-highlight" aria-hidden="true"></div>
     <section class="ob-card" role="dialog" aria-modal="true" aria-labelledby="ob-title">
-      <div class="ob-kicker">はじめてガイド ${onboardingStep + 1} / ${ONBOARDING_STEPS.length}</div>
-      <div id="ob-title" class="ob-title">${esc(step.title)}</div>
-      <div class="ob-body">${esc(step.body)}</div>
-      ${step.tasks ? `<ol class="ob-tasklist">${step.tasks.map(t => `<li>${esc(t)}</li>`).join('')}</ol>` : ''}
-      ${step.safe ? `<div class="ob-safe">${esc(step.safe)}</div>` : ''}
+      <div class="ob-kicker">${esc(tt('onboarding.kicker', { current: onboardingStep + 1, total: ONBOARDING_STEPS.length }))}</div>
+      <div id="ob-title" class="ob-title">${esc(tt(step.title))}</div>
+      <div class="ob-body">${esc(tt(step.body))}</div>
+      ${step.tasks ? `<ol class="ob-tasklist">${step.tasks.map(t => `<li>${esc(tt(t))}</li>`).join('')}</ol>` : ''}
+      ${step.safe ? `<div class="ob-safe">${esc(tt(step.safe))}</div>` : ''}
       <div class="ob-footer">
         <div class="ob-progress" aria-hidden="true">${dots}</div>
         <div class="ob-actions">
-          ${onboardingStep > 0 ? '<button class="ob-prev" type="button">戻る</button>' : ''}
-          <button class="ob-skip" type="button">スキップ</button>
-          <button class="ob-next" type="button">${step.finalCta || (onboardingStep === ONBOARDING_STEPS.length - 1 ? '完了' : '次へ')}</button>
+          ${onboardingStep > 0 ? `<button class="ob-prev" type="button">${esc(tt('onboarding.prev'))}</button>` : ''}
+          <button class="ob-skip" type="button">${esc(tt('onboarding.skip'))}</button>
+          <button class="ob-next" type="button">${esc(step.finalCta ? tt(step.finalCta) : (onboardingStep === ONBOARDING_STEPS.length - 1 ? tt('onboarding.done') : tt('onboarding.next')))}</button>
         </div>
       </div>
     </section>`;
@@ -348,8 +353,8 @@ function buildFlat(d) {
   const roots = d.depts.filter(x => !x.parentId || !deptById[x.parentId]).map(x => x.id).sort();
   const colorOfRoot = {}; roots.forEach((rid, i) => colorOfRoot[rid] = PALETTE[i % PALETTE.length]);
 
-  const rootName = d.tenantName || '組織全体';
-  const nodes = [{ id: ROOT_ID, parentId: '', type: 'root', deptName: rootName, name: rootName, sub: 'テナント全体', avatarChar: initials(rootName), hasLeader: false, count: d.stats.members, color: '#4b4b6b' }];
+  const rootName = d.tenantName || tt('org.rootName');
+  const nodes = [{ id: ROOT_ID, parentId: '', type: 'root', deptName: rootName, name: rootName, sub: tt('org.tenantAll'), avatarChar: initials(rootName), hasLeader: false, count: d.stats.members, color: '#4b4b6b' }];
   d.depts.forEach(x => {
     const leader = x.leaderId && memById[x.leaderId] ? memById[x.leaderId] : null;
     nodes.push({
@@ -412,9 +417,9 @@ function buildChartData() {
   // 部門未設定（無所属）メンバー: 迷子にしないため仮想部門ノードとしてルート直下に出す
   const orphans = unassignedMembers();
   if (orphans.length && (!FOCUS || scope.mode !== 'focus')) {
-    data.push({ id: ORPHAN_ID, parentId: ROOT_ID, type: 'dept', deptName: '部門未設定', name: '部門未設定',
-      sub: 'どの部門にも所属していません', hasLeader: false, isNew: false, deleted: false, virtual: true,
-      avatarChar: '未', color: '#F79009', count: orphans.length, openId: '', path: '' });
+    data.push({ id: ORPHAN_ID, parentId: ROOT_ID, type: 'dept', deptName: tt('org.unassignedDept'), name: tt('org.unassignedDept'),
+      sub: tt('org.unassignedSub'), hasLeader: false, isNew: false, deleted: false, virtual: true,
+      avatarChar: tt('org.unassignedInitial'), color: '#F79009', count: orphans.length, openId: '', path: '' });
     if (DENSITY !== 'simple' && EXPANDED.has(ORPHAN_ID)) {
       orphans.forEach(m => data.push({
         id: `m|${m.id}|${ORPHAN_ID}`, parentId: ORPHAN_ID, type: 'member', memId: m.id, srcDept: ORPHAN_ID,
@@ -437,7 +442,7 @@ function buildChartData() {
     const inDeptIds = new Set(inDept.map(m => m.id));
     const mkNode = (m, parentId) => {
       const hasLeader = m.leaderId && m.leaderId !== m.id;
-      const extLeaderName = (hasLeader && !inDeptIds.has(m.leaderId)) ? (MEMBERS.get(m.leaderId)?.name || '未同期') : '';
+      const extLeaderName = (hasLeader && !inDeptIds.has(m.leaderId)) ? (MEMBERS.get(m.leaderId)?.name || tt('org.notSynced')) : '';
       return {
         id: `m|${m.id}|${did}`, parentId, type: 'member', memId: m.id, srcDept: did, name: m.name, sub: m.title || '',
         multi: m.deptIds.size > 1, extLeaderName, cycle: false, avatarChar: initials(m.name), color: dept.color, status: m.status
@@ -563,9 +568,14 @@ function updateDeptSub(n) {
   const deputies = [...(n.deputyIds || [])]
     .filter(id => id !== n.leaderId && MEMBERS.get(id) && !MEMBERS.get(id).deleted)
     .map(id => MEMBERS.get(id).name);
-  if (!leader || leader.deleted) { n.sub = deputies.length ? `責任者 未設定 ・ 副 ${deputies.join('、')}` : '責任者 未設定'; n.hasLeader = false; return; }
+  if (!leader || leader.deleted) { n.sub = deputies.length ? tt('dept.leaderUnsetWithDeputies', { deputies: deputies.join(tt('punct.list')) }) : tt('dept.leaderUnset'); n.hasLeader = false; return; }
   const inDept = leader.deptIds.has(n.id);
-  n.sub = `責任者: ${leader.name}${leader.title ? `（${leader.title}）` : ''}${inDept ? '' : ' ・ 他部門所属'}${deputies.length ? ` ・ 副 ${deputies.join('、')}` : ''}`;
+  n.sub = tt('dept.leaderLine', {
+    name: leader.name,
+    title: leader.title ? tt('punct.paren', { text: leader.title }) : '',
+    external: inDept ? '' : tt('dept.externalAffiliationPart'),
+    deputies: deputies.length ? tt('dept.deputiesPart', { deputies: deputies.join(tt('punct.list')) }) : ''
+  });
   n.hasLeader = true;
 }
 // 部門内の「最上位の上司」を推定: 上長が部門外/未設定のメンバーのうち、部門内の配下が最多の人
@@ -600,16 +610,16 @@ function cardHTML(n) {
     const isDeptLeader = !!(srcDeptNode && srcDeptNode.leaderId === n.memId);   // この部門の責任者のみ（兼任先では非表示）
     // 関係マーカー: 主部門 / 循環 / 部門外上長 / 兼任 / 状態 を「隠さず」明示する
     const marks = [];
-    if (m && m.deptIds.size > 1 && m.primaryDept === n.srcDept) marks.push('<span class="oc-flag flag-primary" data-tip="主部門（Lark で primary に設定）">主</span>');
-    if (n.cycle) marks.push('<span class="oc-flag flag-err" data-tip="上長関係が循環しています。データをご確認ください">⚠ 循環</span>');
-    else if (n.extLeaderName) marks.push(`<span class="oc-flag flag-ext" data-tip="上長「${esc(n.extLeaderName)}」は別部門に所属しています（部門をまたぐ報告関係）">上長 部門外</span>`);
-    if (n.multi) marks.push('<span class="oc-flag flag-multi" data-tip="複数部門に兼任。Lark の上長はテナント全体で1名のため、部門ごとの上長設定はできません">兼任</span>');
+    if (m && m.deptIds.size > 1 && m.primaryDept === n.srcDept) marks.push(`<span class="oc-flag flag-primary" data-tip="${esc(tt('memberFlag.primaryTip'))}">${esc(tt('memberFlag.primary'))}</span>`);
+    if (n.cycle) marks.push(`<span class="oc-flag flag-err" data-tip="${esc(tt('memberFlag.cycleTip'))}">⚠ ${esc(tt('memberFlag.cycle'))}</span>`);
+    else if (n.extLeaderName) marks.push(`<span class="oc-flag flag-ext" data-tip="${esc(tt('memberFlag.externalLeaderTip', { name: n.extLeaderName }))}">${esc(tt('memberFlag.externalLeader'))}</span>`);
+    if (n.multi) marks.push(`<span class="oc-flag flag-multi" data-tip="${esc(tt('memberFlag.concurrentTip'))}">${esc(tt('memberFlag.concurrent'))}</span>`);
     const sf = m && m.statusFlags;
     let resigned = n.status === '退職';
     if (sf) {
-      if (sf.is_resigned) { resigned = true; marks.push('<span class="oc-flag flag-err" data-tip="退職済み">退職</span>'); }
-      else if (sf.is_frozen) marks.push('<span class="oc-flag flag-frozen" data-tip="アカウント凍結中">凍結</span>');
-      else if (sf.is_unjoin || sf.is_exited) marks.push('<span class="oc-flag flag-multi" data-tip="未参加 / 退出">未参加</span>');
+      if (sf.is_resigned) { resigned = true; marks.push(`<span class="oc-flag flag-err" data-tip="${esc(tt('memberFlag.resignedTip'))}">${esc(tt('memberFlag.resigned'))}</span>`); }
+      else if (sf.is_frozen) marks.push(`<span class="oc-flag flag-frozen" data-tip="${esc(tt('memberFlag.frozenTip'))}">${esc(tt('memberFlag.frozen'))}</span>`);
+      else if (sf.is_unjoin || sf.is_exited) marks.push(`<span class="oc-flag flag-multi" data-tip="${esc(tt('memberFlag.unjoinedTip'))}">${esc(tt('memberFlag.unjoined'))}</span>`);
     }
     const subLine = (n.sub || marks.length)
       ? `<div class="oc-sub oc-msub">${n.sub ? `<span class="oc-subtxt">${esc(n.sub)}</span>` : ''}${marks.join('')}</div>` : '';
@@ -618,18 +628,18 @@ function cardHTML(n) {
   <div class="oc-card oc-member ${st}" draggable="true" data-kind="member" data-id="${n.id}" data-mid="${n.memId}" data-srcdept="${n.srcDept}" style="--c:${n.color}">
     <div class="oc-avatar" style="color:${n.color};background:${soft}">${esc(n.avatarChar)}</div>
     <div class="oc-id">
-      <div class="oc-name ${resigned ? 'st-r' : ''}">${esc(n.name)}${isDeptLeader ? '<span class="lead-badge">責任者</span>' : ''}</div>
+      <div class="oc-name ${resigned ? 'st-r' : ''}">${esc(n.name)}${isDeptLeader ? `<span class="lead-badge">${esc(tt('dept.leaderBadge'))}</span>` : ''}</div>
       ${subLine}
     </div>
-    <button class="oc-detail-btn" data-detail="${n.memId}" data-tip="社員の詳細を見る" aria-label="社員の詳細を見る"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/></svg></button>
-    <span class="oc-handles">${canPrimary ? '<span class="oc-primary-handle" data-tip="この部門を主部門にする">☆</span>' : ''}<span class="oc-del-handle" data-tip="この部門から外す"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></span></span>
+    <button class="oc-detail-btn" data-detail="${n.memId}" data-tip="${esc(tt('member.detailTip'))}" aria-label="${esc(tt('member.detailTip'))}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M5 20v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/></svg></button>
+    <span class="oc-handles">${canPrimary ? `<span class="oc-primary-handle" data-tip="${esc(tt('member.makePrimaryTip'))}">☆</span>` : ''}<span class="oc-del-handle" data-tip="${esc(tt('member.removeFromDeptTip'))}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></span></span>
   </div>`;
   }
   if (n.type === 'more') {   // 「他 N 名」= 折りたたまれた一般メンバー。クリックで部門の全員リストを右パネルに開く
     return `
   <div class="oc-card oc-more" data-kind="more" data-dept="${n.deptId}" style="--c:${n.color}">
     <span class="oc-more-plus">+${n.count}</span>
-    <span class="oc-more-tx">他 ${n.count} 名を表示</span>
+    <span class="oc-more-tx">${esc(tt('org.showMoreMembers', { count: n.count }))}</span>
   </div>`;
   }
   const kids = n.type === 'dept' && (n.virtual ? n.count > 0 : hasKids(n.id));
@@ -638,23 +648,23 @@ function cardHTML(n) {
   const childDepts = n.type === 'dept' && !n.virtual ? NODES.filter(x => x.type === 'dept' && !x.deleted && x.parentId === n.id).length : 0;
   const memCnt = n.virtual ? n.count : n.type === 'dept' ? displayDeptHeadcount(n.id) : n.count;   // カード数字＝表示中の部門全体人数（子部門含む・重複なし）
   const directCnt = n.type === 'dept' && !n.virtual ? deptDirectCount(n.id) : 0;
-  const cntTip = n.virtual ? '部門未設定のメンバー' : n.type === 'dept' ? `部門全体 ${memCnt} 名（子部門含む）・ 直属 ${directCnt} 名` : '';
+  const cntTip = n.virtual ? tt('org.unassignedMembersTip') : n.type === 'dept' ? tt('org.countTip', { total: memCnt, direct: directCnt }) : '';
   return `
   <div class="oc-card ${n.type === 'root' ? 'oc-root' : ''} ${n.virtual ? 'oc-virtual' : ''} ${state} ${kids ? 'has-kids' : ''}" draggable="${n.type === 'dept' && !n.virtual}" data-kind="${n.virtual ? 'virtual' : n.type}" data-id="${n.id}" style="--c:${n.color}">
-    ${n.type === 'dept' && n.virtual ? '' : n.type === 'dept' ? `<span class="oc-handles"><span class="oc-info-handle" data-detail-dept="${n.id}" data-tip="部門の詳細"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg></span><span class="oc-move-handle" data-tip="別の部門へ移動">⇄</span><span class="oc-add-handle" data-tip="配下に部門を追加">＋</span><span class="oc-del-handle" data-tip="部門を削除"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></span></span>` : ''}
-    ${n.type === 'root' ? '<span class="oc-handles"><span class="oc-add-handle" data-tip="部門を追加">＋</span></span>' : ''}
+    ${n.type === 'dept' && n.virtual ? '' : n.type === 'dept' ? `<span class="oc-handles"><span class="oc-info-handle" data-detail-dept="${n.id}" data-tip="${esc(tt('dept.detailTip'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.5"/></svg></span><span class="oc-move-handle" data-tip="${esc(tt('dept.moveTip'))}">⇄</span><span class="oc-add-handle" data-tip="${esc(tt('dept.addChildTip'))}">＋</span><span class="oc-del-handle" data-tip="${esc(tt('dept.deleteTip'))}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></span></span>` : ''}
+    ${n.type === 'root' ? `<span class="oc-handles"><span class="oc-add-handle" data-tip="${esc(tt('dept.addTip'))}">＋</span></span>` : ''}
     <div class="oc-avatar" style="color:${n.color};background:${soft}">${esc(n.avatarChar)}</div>
     <div class="oc-id">
       <div class="oc-name">${esc(n.name)}</div>
-      <div class="oc-sub ${n.hasLeader ? '' : 'muted'} ${n.type === 'dept' && !n.virtual ? 'oc-leader' : ''}" ${n.type === 'dept' && !n.virtual ? 'data-tip="クリックで責任者を設定"' : ''}>${esc(n.sub)}</div>
+      <div class="oc-sub ${n.hasLeader ? '' : 'muted'} ${n.type === 'dept' && !n.virtual ? 'oc-leader' : ''}" ${n.type === 'dept' && !n.virtual ? `data-tip="${esc(tt('dept.setLeaderTip'))}"` : ''}>${esc(n.sub)}</div>
     </div>
-    <div class="oc-count" ${n.type === 'dept' ? `data-tip="${cntTip}"` : ''}>${memCnt} 名${childDepts ? `<span class="oc-kidcnt" title="子部門">・${childDepts}部門</span>` : ''} <span class="oc-chevron"${kids ? ` data-expand="${n.id}"` : ''}>${chevron}</span></div>
+    <div class="oc-count" ${n.type === 'dept' ? `data-tip="${esc(cntTip)}"` : ''}>${esc(tt('count.members', { count: memCnt }))}${childDepts ? `<span class="oc-kidcnt" title="${esc(tt('dept.childDepts'))}">・${esc(tt('count.depts', { count: childDepts }))}</span>` : ''} <span class="oc-chevron"${kids ? ` data-expand="${n.id}"` : ''}>${chevron}</span></div>
   </div>`;
 }
 function buttonHTML(node) {
   const cnt = node.data._directSubordinates || 0;
   const expanded = node.children && node.children.length;
-  return `<div class="oc-toggle">${expanded ? '折りたたむ' : '展開する'} ${cnt} 名の直属下位</div>`;
+  return `<div class="oc-toggle">${esc(tt(expanded ? 'org.collapseDirect' : 'org.expandDirect', { count: cnt }))}</div>`;
 }
 
 // ---- 接続線（表現層のみ）: 角丸エルボー ----
@@ -1873,8 +1883,8 @@ function outlineDept(d) {
       <span class="olx-dname" data-jump="${d.id}">${esc(d.deptName)}</span>
       ${leader ? `<span class="olx-leader"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></svg>${esc(leader)}</span>` : ''}
       <span class="olx-spacer"></span>
-      ${childDepts.length ? `<span class="olx-subcount">部門 ${childDepts.length}</span>` : ''}
-      <span class="olx-count">${displayDeptHeadcount(d.id)}<span class="olx-count-u">名</span></span>
+      ${childDepts.length ? `<span class="olx-subcount">${esc(tt('count.depts', { count: childDepts.length }))}</span>` : ''}
+      <span class="olx-count">${displayDeptHeadcount(d.id)}<span class="olx-count-u">${esc(tt('unit.member'))}</span></span>
     </div>${children}</div>`;
 }
 function memberOutlineRow(m, dept) {
@@ -1882,7 +1892,7 @@ function memberOutlineRow(m, dept) {
   const soft = softColor(dept.color);
   const isLeader = dept.leaderId === m.id;
   const badges =
-    (isLeader ? '<span class="olx-badge olx-badge-lead">責任者</span>' : '') +
+    (isLeader ? `<span class="olx-badge olx-badge-lead">${esc(tt('dept.leaderBadge'))}</span>` : '') +
     (st.badge ? `<span class="oc-flag ${st.cls}">${st.badge}</span>` : '');
   return `<div class="olx-mrow" data-detail="${m.id}">
     <span class="olx-av olx-av-m" style="color:${dept.color};background:${soft}">${esc(initials(m.name))}</span>
@@ -1903,16 +1913,16 @@ function boardHTML() {
     .map(({ d, members, head, subs }) => {
       const leader = d.leaderId ? (MEMBERS.get(d.leaderId) || {}).name : null;
       // 子部門チップ（クリックでその部門にドリル）
-      const subChips = subs.map(s => `<button class="bd-subchip" data-detail-dept="${s.id}"><span class="bd-subav" style="color:${s.color};background:${softColor(s.color)}">${esc(initials(s.deptName))}</span><span class="bd-subname">${esc(s.deptName)}</span><span class="bd-subn">${displayDeptHeadcount(s.id)}名</span></button>`).join('');
-      const subSection = subs.length ? `<div class="bd-sec-h">子部門 ${subs.length}</div><div class="bd-subdepts">${subChips}</div>` : '';
+      const subChips = subs.map(s => `<button class="bd-subchip" data-detail-dept="${s.id}"><span class="bd-subav" style="color:${s.color};background:${softColor(s.color)}">${esc(initials(s.deptName))}</span><span class="bd-subname">${esc(s.deptName)}</span><span class="bd-subn">${esc(tt('count.members', { count: displayDeptHeadcount(s.id) }))}</span></button>`).join('');
+      const subSection = subs.length ? `<div class="bd-sec-h">${esc(tt('detail.childDepartments'))} ${subs.length}</div><div class="bd-subdepts">${subChips}</div>` : '';
       // 直属メンバーチップ
       const chips = members.map(m => {
         const st = memberStatusShort(m);
         return `<button class="bd-chip${st.resigned ? ' bd-resigned' : ''}" data-detail="${m.id}"><span class="bd-av" style="color:${d.color}">${esc(initials(m.name))}</span><span class="bd-cname">${esc(m.name)}</span></button>`;
       }).join('');
-      const memSection = members.length ? `${subs.length ? '<div class="bd-sec-h">直属メンバー</div>' : ''}<div class="bd-members">${chips}</div>`
-        : (subs.length ? '' : '<div class="bd-empty">メンバーがいません</div>');
-      const sub = `${leader ? `責任者 ${esc(leader)} ・ ` : ''}全体 ${head} 名${members.length !== head ? ` ・ 直属 ${members.length}` : ''}`;
+      const memSection = members.length ? `${subs.length ? `<div class="bd-sec-h">${esc(tt('detail.directMembers'))}</div>` : ''}<div class="bd-members">${chips}</div>`
+        : (subs.length ? '' : `<div class="bd-empty">${esc(tt('board.noMembers'))}</div>`);
+      const sub = `${leader ? `${tt('dept.leaderBadge')} ${leader} ・ ` : ''}${tt('board.totalMembers', { count: head })}${members.length !== head ? ` ・ ${tt('board.directMembers', { count: members.length })}` : ''}`;
       return `<div class="bd-card" style="--c:${d.color}">
         <div class="bd-head" data-jump="${d.id}"><div class="bd-name">${esc(d.deptName)}</div><div class="bd-sub">${esc(sub)}</div></div>
         <div class="bd-body">${subSection}${memSection}</div></div>`;
@@ -1920,12 +1930,12 @@ function boardHTML() {
   // 部門未設定（無所属）メンバー: 見落とすと迷子になるため必ず末尾に出す
   const orphans = unassignedMembers().filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.title || '').toLowerCase().includes(q));
   const orphanCard = orphans.length ? `<div class="bd-card bd-card-warn" style="--c:var(--warning)">
-      <div class="bd-head" data-orphans="1"><div class="bd-name">部門未設定</div><div class="bd-sub">どの部門にも所属していません ・ ${orphans.length} 名</div></div>
+      <div class="bd-head" data-orphans="1"><div class="bd-name">${esc(tt('org.unassignedDept'))}</div><div class="bd-sub">${esc(tt('org.unassignedSub'))} ・ ${esc(tt('count.members', { count: orphans.length }))}</div></div>
       <div class="bd-body"><div class="bd-members">${orphans.map(m => {
         const st = memberStatusShort(m);
         return `<button class="bd-chip${st.resigned ? ' bd-resigned' : ''}" data-detail="${m.id}"><span class="bd-av" style="color:var(--warning);background:var(--warning-bg)">${esc(initials(m.name))}</span><span class="bd-cname">${esc(m.name)}</span></button>`;
       }).join('')}</div></div></div>` : '';
-  return `<div class="bd-grid">${cards || (orphanCard ? '' : '<div class="ol-empty">該当する部門がありません（絞り込み条件をご確認ください）</div>')}${orphanCard}</div>`;
+  return `<div class="bd-grid">${cards || (orphanCard ? '' : `<div class="ol-empty">${esc(tt('board.noDepartments'))}</div>`)}${orphanCard}</div>`;
 }
 // ビュー切替タブ + 一覧/ボード内のクリック委譲（部門=組織図へジャンプ / メンバー=詳細 / ▸=展開）
 document.querySelectorAll('#viewSeg .vseg').forEach(b => b.onclick = () => setView(b.dataset.view));
@@ -1946,7 +1956,7 @@ function openAddBar(parentId) {
   if (moveState) return;
   closeLeaderBar();
   addParent = parentId;
-  $('add-label').textContent = `「${parentId === ROOT_ID ? 'トップ階層' : deptNameById(parentId)}」配下に部門を追加：`;
+  $('add-label').textContent = tt('addBar.label', { parent: parentId === ROOT_ID ? tt('org.topLevel') : deptNameById(parentId) });
   $('addBar').hidden = false;
   $('add-name').value = '';
   document.querySelectorAll('.oc-card.move-src').forEach(el => el.classList.remove('move-src'));
@@ -1961,24 +1971,24 @@ function closeAddBar() {
 function confirmAdd() {
   if (addParent == null) return;
   const name = $('add-name').value.trim();
-  if (!name) { showToast('部門名を入力してください', true); $('add-name').focus(); return; }
-  if (NODES.some(n => n.type === 'dept' && !n.deleted && n.deptName === name)) { showToast(`「${name}」は既に存在します`, true); return; }
+  if (!name) { showToast(tt('addBar.nameRequired'), true); $('add-name').focus(); return; }
+  if (NODES.some(n => n.type === 'dept' && !n.deleted && n.deptName === name)) { showToast(tt('csv.error.nameExists', { name }), true); return; }
   const pid = addParent;
   const parent = NODES.find(n => n.id === pid);
   const id = `new|${NEWSEQ++}`;
   NODES.push({
     id, parentId: pid, type: 'dept', deptName: name, name, origName: name, isNew: true, deleted: false,
-    sub: '責任者 未設定', hasLeader: false, avatarChar: initials(name), openId: '', path: '',
+    sub: tt('dept.leaderUnset'), hasLeader: false, avatarChar: initials(name), openId: '', path: '',
     count: 0, baseCount: 0, color: parent && parent.type === 'dept' ? parent.color : PALETTE[NODES.length % PALETTE.length]
   });
   if (pid !== ROOT_ID) EXPANDED.add(pid);
   expandAncestorsOf(id);
   closeAddBar();
   PLAN = null; markEdited();
-  logHist('下書き編集', `新規部門「${name}」を ${parentName(pid)} 配下に追加`);
+  logHist(tt('hist.draftEdit'), tt('hist.deptAdded', { name, parent: parentName(pid) }));
   render(); renderDiff();
   try { chart.setCentered(id).render(); flashCard(id); } catch (_) {}
-  showToast(`部門「${name}」の追加を下書きに追加しました。`);
+  showToast(tt('toast.deptAdded', { name }));
 }
 $('add-ok').onclick = confirmAdd;
 $('add-cancel').onclick = closeAddBar;
@@ -2006,8 +2016,8 @@ let memberDept = null;   // 追加先部門 id
 let EMP_TYPES = null;
 async function loadEmpTypes() {
   if (EMP_TYPES) return EMP_TYPES;
-  try { const r = await (await fetch('/api/employee-types')).json(); EMP_TYPES = (r.items && r.items.length) ? r.items : [{ value: '1', name: '正社員' }]; }
-  catch (_) { EMP_TYPES = [{ value: '1', name: '正社員' }]; }
+  try { const r = await (await fetch('/api/employee-types')).json(); EMP_TYPES = (r.items && r.items.length) ? r.items : [{ value: '1', name: tt('empType.fullTime') }]; }
+  catch (_) { EMP_TYPES = [{ value: '1', name: tt('empType.fullTime') }]; }
   const sel = $('mm-emptype');
   if (sel) sel.innerHTML = EMP_TYPES.map(t => `<option value="${esc(t.value)}">${esc(t.name)}</option>`).join('');
   return EMP_TYPES;
@@ -2016,7 +2026,7 @@ function openMemberModal(deptId) {
   const n = NODES.find(x => x.id === deptId); if (!n || n.type !== 'dept' || n.deleted) return;
   cancelMove(); closeAddBar(); closeLeaderBar();
   memberDept = deptId;
-  $('mm-dept').textContent = `追加先: ${n.deptName}`;
+  $('mm-dept').textContent = tt('memberAdd.destination', { dept: n.deptName });
   ['mm-name', 'mm-email', 'mm-mobile', 'mm-title'].forEach(id => $(id).value = '');
   loadEmpTypes().then(() => { const s = $('mm-emptype'); if (s) s.value = '1'; });   // 既定=正社員(1)
   $('mm-err').hidden = true;
@@ -2030,12 +2040,12 @@ function submitMember() {
   const mobile = $('mm-mobile').value.trim();
   const title = $('mm-title').value.trim();
   const fail = (msg) => { const el = $('mm-err'); el.hidden = false; el.textContent = msg; };
-  if (!name) return fail('氏名を入力してください');
-  if (!email) return fail('メールアドレスを入力してください（招待の送付先）');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail('メールアドレスの形式が正しくありません');
-  if (!mobile) return fail('携帯番号を入力してください（Lark アカウントの識別子）');
+  if (!name) return fail(tt('memberAdd.error.nameRequired'));
+  if (!email) return fail(tt('memberAdd.error.emailRequired'));
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(tt('memberAdd.error.emailInvalid'));
+  if (!mobile) return fail(tt('memberAdd.error.mobileRequired'));
   const dup = [...MEMBERS.values()].some(m => !m.deleted && (m.email || '').toLowerCase() === email.toLowerCase());
-  if (dup) return fail(`メール「${email}」は既に使われています`);
+  if (dup) return fail(tt('csv.error.emailDuplicate', { email }));
   const id = `newm|${NEWMSEQ++}`;
   const did = memberDept;
   const empType = ($('mm-emptype') && $('mm-emptype').value) || '1';
@@ -2046,12 +2056,12 @@ function submitMember() {
   });
   EXPANDED.add(did); expandAncestorsOf(did);
   PLAN = null; markEdited();
-  logHist('下書き編集', `新規メンバー「${name}」を ${deptNameById(did)} に追加`);
+  logHist(tt('hist.draftEdit'), tt('hist.memberAdded', { name, dept: deptNameById(did) }));
   closeMemberModal();
   revealDept(did);   // 簡潔モードでは追加先部門に集中して新メンバーを可視化
   render(); renderDiff();
   try { chart.setCentered(`m|${id}|${did}`).render(); flashCard(`m|${id}|${did}`); } catch (_) {}
-  showToast(`メンバー「${name}」の追加を下書きに追加しました。`);
+  showToast(tt('toast.memberAdded', { name }));
 }
 $('mm-ok').onclick = submitMember;
 $('mm-cancel').onclick = closeMemberModal;
@@ -2065,7 +2075,7 @@ function openLeaderBar(deptId) {
   if (!n || n.type !== 'dept' || n.deleted) return;
   cancelMove(); closeAddBar();               // 他のコマンドバーと同時表示しない
   leaderTarget = deptId;
-  $('leader-label').textContent = `「${n.deptName}」の責任者（主・副）：`;
+  $('leader-label').textContent = tt('leaderBar.label', { dept: n.deptName });
   $('leader-clear').hidden = !(n.leaderId || (n.deputyIds && n.deputyIds.size));
   $('leaderBar').hidden = false;
   $('leader-search').value = '';
@@ -2090,7 +2100,7 @@ function renderLeaderResults(q) {
   const members = [...MEMBERS.values()].filter(m => !m.deleted && (m.deptIds.has(leaderTarget) || extra.has(m.id)));
   if (!members.length) {
     box.hidden = false;
-    box.innerHTML = `<div class="sr-empty">同期済みのメンバーがいません。先にメンバーを異動してから設定してください。</div>`;
+    box.innerHTML = `<div class="sr-empty">${esc(tt('leaderBar.noMembers'))}</div>`;
     return;
   }
   const boss = topBossOf(leaderTarget);
@@ -2099,24 +2109,25 @@ function renderLeaderResults(q) {
   // 並び: 主 → 副 → 推奨（最上位の上司）→ 名前順
   list.sort((a, b) => {
     const w = (m) => (m.id === n.leaderId ? 0 : dep.has(m.id) ? 1 : boss && m.id === boss.id ? 2 : 3);
-    return w(a) - w(b) || String(a.name).localeCompare(b.name, 'ja');
+    const cmp = window.OrgI18n ? window.OrgI18n.collator().compare : ((x, y) => String(x).localeCompare(String(y), 'ja'));
+    return w(a) - w(b) || cmp(String(a.name), String(b.name));
   });
   list = list.slice(0, 12);
   if (!list.length) { box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
   box.innerHTML = list.map(m => {
     const isMain = m.id === n.leaderId, isDep = dep.has(m.id);
-    const roleBadge = isMain ? '<span class="sr-badge sr-badge-now">主責任者</span>'
-      : isDep ? '<span class="sr-badge sr-badge-dep">副責任者</span>'
-      : (boss && m.id === boss.id ? '<span class="sr-badge">推奨</span>' : '');
+    const roleBadge = isMain ? `<span class="sr-badge sr-badge-now">${esc(tt('leaderBar.mainOwner'))}</span>`
+      : isDep ? `<span class="sr-badge sr-badge-dep">${esc(tt('leaderBar.deputyOwner'))}</span>`
+      : (boss && m.id === boss.id ? `<span class="sr-badge">${esc(tt('leaderBar.recommended'))}</span>` : '');
     const actions = isMain ? ''
-      : `<button class="lb-btn" data-act="main" data-id="${m.id}">主にする</button>`
+      : `<button class="lb-btn" data-act="main" data-id="${m.id}">${esc(tt('leaderBar.setMain'))}</button>`
         + (isDep
-          ? `<button class="lb-btn lb-btn-off" data-act="dep" data-id="${m.id}">副を外す</button>`
-          : `<button class="lb-btn" data-act="dep" data-id="${m.id}"${n.leaderId ? '' : ' disabled title="先に主責任者を設定してください"'}>副に追加</button>`);
-    const up = m.leaderId && MEMBERS.get(m.leaderId) ? `上長: ${MEMBERS.get(m.leaderId).name}` : '上長なし';
+          ? `<button class="lb-btn lb-btn-off" data-act="dep" data-id="${m.id}">${esc(tt('leaderBar.removeDeputy'))}</button>`
+          : `<button class="lb-btn" data-act="dep" data-id="${m.id}"${n.leaderId ? '' : ` disabled title="${esc(tt('leaderBar.setMainFirst'))}"`}>${esc(tt('leaderBar.addDeputy'))}</button>`);
+    const up = m.leaderId && MEMBERS.get(m.leaderId) ? tt('leaderBar.managerLine', { name: MEMBERS.get(m.leaderId).name }) : tt('leaderBar.noManager');
     return `<div class="sr-item" data-id="${m.id}">
-       <span class="sr-icon">人</span>
+       <span class="sr-icon">${esc(tt('search.memberIcon'))}</span>
        <span class="sr-body"><span class="sr-name">${esc(m.name)}</span><span class="sr-sub">${esc([m.title, up].filter(Boolean).join(' ・ '))}</span></span>
        <span class="lb-role">${roleBadge}${actions}</span>
      </div>`;
@@ -2132,7 +2143,7 @@ function renderLeaderResults(q) {
 function applyLeaderEdit(n, logMsg, toastMsg) {
   updateDeptSub(n);
   PLAN = null; markEdited();
-  logHist('下書き編集', `${n.deptName}: ${logMsg}`);
+  logHist(tt('hist.draftEdit'), `${n.deptName}: ${logMsg}`);
   render(); renderDiff();
   refreshLeaderBar();
   if (toastMsg) showToast(toastMsg);
@@ -2150,20 +2161,20 @@ function setMainLeader(memId) {
   if (!n || !m || m.deleted || n.leaderId === memId) return;
   if (n.deputyIds) n.deputyIds.delete(memId);   // 主に昇格したら副からは外す（重複不可）
   n.leaderId = memId;
-  applyLeaderEdit(n, `主責任者 → ${m.name}`, `「${n.deptName}」の主責任者を「${m.name}」に設定する変更を下書きに追加しました。`);
+  applyLeaderEdit(n, tt('hist.mainOwnerTo', { name: m.name }), tt('toast.mainOwnerSet', { dept: n.deptName, name: m.name }));
 }
 function toggleDeputy(memId) {
   const n = NODES.find(x => x.id === leaderTarget); const m = MEMBERS.get(memId);
   if (!n || !m || m.deleted) return;
-  if (n.leaderId === memId) { showToast('主責任者は副に追加できません。', true); return; }
+  if (n.leaderId === memId) { showToast(tt('leaderBar.mainCannotBeDeputy'), true); return; }
   if (!n.deputyIds) n.deputyIds = new Set();
   if (n.deputyIds.has(memId)) {
     n.deputyIds.delete(memId);
-    applyLeaderEdit(n, `副責任者から外す: ${m.name}`, `「${m.name}」を副責任者から外す変更を下書きに追加しました。`);
+    applyLeaderEdit(n, tt('hist.removeDeputy', { name: m.name }), tt('toast.deputyRemoved', { name: m.name }));
   } else {
-    if (!n.leaderId) { showToast('先に主責任者を設定してください。', true); return; }
+    if (!n.leaderId) { showToast(tt('leaderBar.setMainFirst'), true); return; }
     n.deputyIds.add(memId);
-    applyLeaderEdit(n, `副責任者に追加: ${m.name}`, `「${m.name}」を副責任者に追加する変更を下書きに追加しました。`);
+    applyLeaderEdit(n, tt('hist.addDeputy', { name: m.name }), tt('toast.deputyAdded', { name: m.name }));
   }
 }
 function clearLeader() {
@@ -2176,16 +2187,16 @@ function clearLeader() {
   const doClear = () => {
     n.leaderId = null; n.deputyIds = new Set();
     updateDeptSub(n); PLAN = null; closeLeaderBar();
-    markEdited(); logHist('下書き編集', `${n.deptName} の責任者（主・副）を全解除`);
+    markEdited(); logHist(tt('hist.draftEdit'), tt('hist.clearOwners', { dept: n.deptName }));
     render(); renderDiff();
-    showToast(`「${n.deptName}」の責任者（主・副）を解除する変更を下書きに追加しました。`);
+    showToast(tt('toast.ownersCleared', { dept: n.deptName }));
   };
   // Lark 制約: 主なしで副のみは保持不可 → 副がいれば「一緒に解除される」ことを明示（silent 破壊の防止）
   if (totalDep) {
     openConfirm({
-      title: '責任者を解除しますか？',
-      body: `<div class="act-note act-warn">Lark では主責任者なしで副責任者だけを残すことはできません。解除すると<b>副責任者（${totalDep}名）も一緒に解除</b>されます。</div>`,
-      okLabel: '主・副とも解除', okClass: 'act-danger', onOk: doClear
+      title: tt('leaderBar.clearConfirmTitle'),
+      body: `<div class="act-note act-warn">${tt('leaderBar.clearConfirmBodyHtml', { count: totalDep })}</div>`,
+      okLabel: tt('leaderBar.clearBoth'), okClass: 'act-danger', onOk: doClear
     });
   } else doClear();
 }
@@ -2212,17 +2223,17 @@ function requestDeleteDept(deptId) {
   const n = NODES.find(x => x.id === deptId);
   if (!n || n.type !== 'dept' || n.deleted) return;
   if (NODES.some(x => x.type === 'dept' && !x.deleted && x.parentId === deptId)) {
-    showToast('子部門があるため削除できません（先に移動または削除してください）', true); flashInvalid(deptId); return;
+    showToast(tt('delete.deptHasChildren'), true); flashInvalid(deptId); return;
   }
   let mc = 0; MEMBERS.forEach(m => { if (!m.deleted && m.deptIds.has(deptId)) mc++; });
-  if (mc > 0) { showToast(`${mc} 名のメンバーが所属しているため削除できません（先に異動してください）`, true); flashInvalid(deptId); return; }
+  if (mc > 0) { showToast(tt('delete.deptHasMembers', { count: mc }), true); flashInvalid(deptId); return; }
   const name = n.deptName;
   if (n.isNew) NODES = NODES.filter(x => x.id !== deptId);   // 草稿追加はその場で取り消し
   else n.deleted = true;
   PLAN = null; markEdited();
-  logHist('下書き編集', n.isNew ? `新規部門「${name}」を取り消し` : `部門「${name}」を削除予定に`);
+  logHist(tt('hist.draftEdit'), n.isNew ? tt('hist.cancelNewDept', { name }) : tt('hist.deptDeleteDraft', { name }));
   render(); renderDiff();
-  showToast(n.isNew ? `「${name}」（未保存の新規部門）を取り消しました` : `部門「${name}」の削除を下書きに追加しました（変更内容から取り消せます）。`);
+  showToast(n.isNew ? tt('toast.newDeptCanceled', { name }) : tt('toast.deptDeleteDraft', { name }));
 }
 // メンバーの 🗑 = この部門から外す（全社からの退職ではない。退職は CSV で処理）
 function removeMemberFromDept(memId, deptId) {
@@ -2234,36 +2245,36 @@ function removeMemberFromDept(memId, deptId) {
       MEMBERS.delete(memId);
       NODES.forEach(n => { if (n.type === 'dept' && n.leaderId === memId) updateDeptSub(n); });
       PLAN = null; markEdited();
-      logHist('下書き編集', `新規メンバー「${m.name}」を取り消し`);
+      logHist(tt('hist.draftEdit'), tt('hist.cancelNewMember', { name: m.name }));
       render(); renderDiff();
-      showToast(`「${m.name}」（未保存の新規メンバー）を取り消しました`);
+      showToast(tt('toast.newMemberCanceled', { name: m.name }));
       return;
     }
-    showToast(`「${m.name}」の所属はこの部門だけです。別の部門へ異動するか、退職は CSV で処理してください。`, true);
+    showToast(tt('delete.onlyDeptWarning', { name: m.name }), true);
     flashInvalid(`m|${memId}|${deptId}`);
     return;
   }
   m.deptIds.delete(deptId);
   const dept = NODES.find(n => n.id === deptId);
   let extra = '';
-  if (dept && dept.leaderId === memId) { dept.leaderId = null; updateDeptSub(dept); extra = '（責任者も解除）'; }
+  if (dept && dept.leaderId === memId) { dept.leaderId = null; updateDeptSub(dept); extra = tt('delete.ownerAlsoCleared'); }
   PLAN = null; markEdited();
-  logHist('下書き編集', `「${m.name}」を「${dname}」から外す${extra}`);
+  logHist(tt('hist.draftEdit'), tt('hist.removeMemberFromDept', { name: m.name, dept: dname, extra }));
   render(); renderDiff();
-  showToast(`「${m.name}」を「${dname}」から外す変更を下書きに追加しました${extra}。`);
+  showToast(tt('toast.removeMemberFromDept', { name: m.name, dept: dname, extra }));
 }
 // メンバーの ☆ = この部門を主部門にする（Lark: 兼任先のうち department_order 最大が主部門。書き戻しでライブ orders をマージ）
 function setPrimaryDept(memId, deptId) {
   const m = MEMBERS.get(memId); if (!m || m.deleted) return;
-  if (m.isNew) { showToast('新規メンバーの主部門は、追加を反映した後に設定してください。', true); return; }
-  if (m.deptIds.size <= 1) { showToast('主部門は「兼任（複数部門所属）」のメンバーにのみ設定できます。', true); return; }
+  if (m.isNew) { showToast(tt('primary.newMemberBlocked'), true); return; }
+  if (m.deptIds.size <= 1) { showToast(tt('primary.concurrentOnly'), true); return; }
   if (!m.deptIds.has(deptId) || m.primaryDept === deptId) return;
   const dname = deptNameById(deptId);
   m.primaryDept = deptId;
   PLAN = null; markEdited();
-  logHist('下書き編集', `「${m.name}」の主部門を「${dname}」に変更`);
+  logHist(tt('hist.draftEdit'), tt('hist.primaryDeptChanged', { name: m.name, dept: dname }));
   render(); renderDiff();
-  showToast(`「${m.name}」の主部門を「${dname}」に設定する変更を下書きに追加しました。`);
+  showToast(tt('toast.primaryDeptChanged', { name: m.name, dept: dname }));
 }
 // ---- 社員詳細ポップオーバー（人形ボタン → 従業員の詳細情報） ----
 // メンバー詳細は右パネルに一本化（浮层は廃止）。全ビューの人員クリック/人形ボタンから呼ばれる
@@ -2329,28 +2340,28 @@ function undoDelete(kind, id) {
 function showDragHint(msg, ok) { const h = $('dragHint'); h.hidden = false; h.textContent = msg; h.classList.toggle('ng', !ok); }
 function hideDragHint() { $('dragHint').hidden = true; }
 function dropActionLabel(card) {
-  if (dragState.kind === 'dept') return `ここへ移動（下書きに追加されます）`;
-  if (card.dataset.kind === 'member') return `「${MEMBERS.get(card.dataset.mid)?.name || ''}」の配下に（上長に設定）`;
-  if (card.dataset.id === dragState.srcDept) return `部門直下へ（上長を解除）`;
-  return `この部門へ異動（下書きに追加されます）`;
+  if (dragState.kind === 'dept') return tt('drag.moveHere');
+  if (card.dataset.kind === 'member') return tt('drag.setManager', { name: MEMBERS.get(card.dataset.mid)?.name || '' });
+  if (card.dataset.id === dragState.srcDept) return tt('drag.clearManager');
+  return tt('drag.transferHere');
 }
 function dropInvalidReason(card) {
   const kind = card.dataset.kind;
   if (dragState.kind === 'dept') {
-    if (kind === 'member') return '部門は人の上に置けません';
-    if (card.dataset.id === dragState.id) return '自分自身へは移動できません';
-    if (card.dataset.id !== ROOT_ID && isDescendant(card.dataset.id, dragState.id)) return '自部門の配下へは移動できません（循環）';
-    return 'ここへは移動できません';
+    if (kind === 'member') return tt('drag.invalid.deptOnMember');
+    if (card.dataset.id === dragState.id) return tt('drag.invalid.selfMove');
+    if (card.dataset.id !== ROOT_ID && isDescendant(card.dataset.id, dragState.id)) return tt('drag.invalid.cycle');
+    return tt('drag.invalid.cannotMove');
   }
   if (kind === 'member') {
     const m = MEMBERS.get(dragState.id);
-    if (card.dataset.mid === dragState.id) return '自分自身は上長にできません';
-    if (m && m.leaderId === card.dataset.mid) return '既にこの人の配下です';
-    return '上長の循環になるため設定できません';
+    if (card.dataset.mid === dragState.id) return tt('drag.invalid.selfManager');
+    if (m && m.leaderId === card.dataset.mid) return tt('drag.invalid.alreadyUnder');
+    return tt('drag.invalid.managerCycle');
   }
-  if (kind === 'root') return 'メンバーはトップ階層に置けません';
-  if (card.dataset.id === dragState.srcDept) return '上長がいないため、この操作は不要です';
-  return 'ここへは移動できません';
+  if (kind === 'root') return tt('drag.invalid.memberTop');
+  if (card.dataset.id === dragState.srcDept) return tt('drag.invalid.noManagerNoop');
+  return tt('drag.invalid.cannotMove');
 }
 function clearDropOnly() { document.querySelectorAll('.drop-target,.drop-invalid').forEach(el => el.classList.remove('drop-target', 'drop-invalid')); }
 function clearDnDStyles() { clearDropOnly(); document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging')); dragState = null; }
@@ -2387,7 +2398,7 @@ function leaderMoveOutNote(m, srcDeptId) {
   const sd = NODES.find(x => x.id === srcDeptId);
   if (sd && sd.type === 'dept' && sd.leaderId === m.id && !m.deptIds.has(srcDeptId)) {
     updateDeptSub(sd);   // 「他部門所属」注記を即時反映
-    return `※「${m.name}」は「${sd.deptName}」の責任者です。移動後は部門外の責任者になります（必要に応じて再設定してください）。`;
+    return tt('drag.leaderMoveOutNote', { name: m.name, dept: sd.deptName });
   }
   return '';
 }
@@ -2397,8 +2408,8 @@ function applyLeaderDrop(leaderMid) {   // 人 → 人 ドロップ = 上長に�
   if (!m) return;
   m.leaderId = leaderMid;
   markEdited();
-  logHist('下書き編集', `${m.name} の上長を ${MEMBERS.get(leaderMid)?.name || '?'} に設定`);
-  showToast(`「${m.name}」の上長を「${MEMBERS.get(leaderMid)?.name || '?'}」に設定しました（下書き）。`);
+  logHist(tt('hist.draftEdit'), tt('hist.managerSet', { name: m.name, manager: MEMBERS.get(leaderMid)?.name || '?' }));
+  showToast(tt('toast.managerSet', { name: m.name, manager: MEMBERS.get(leaderMid)?.name || '?' }));
   PLAN = null;
   render(); renderDiff();
 }
@@ -2412,17 +2423,17 @@ function applyDrop(targetId) {
       // 自部門カードへドロップ = 部門直下へ = 上長解除（上長と同列になる）
       const old = MEMBERS.get(m.leaderId)?.name || '?';
       m.leaderId = null;
-      showToast(`「${m.name}」を部門直下へ移動し、上長（${old}）を解除しました（下書き）。`);
-      logHist('下書き編集', `${m.name} の上長（${old}）を解除`);
+      showToast(tt('toast.managerClearedByDrop', { name: m.name, manager: old }));
+      logHist(tt('hist.draftEdit'), tt('hist.managerCleared', { name: m.name, manager: old }));
     } else {
       if (dragState.srcDept) m.deptIds.delete(dragState.srcDept);
       m.deptIds.add(targetId);
       const note = leaderMoveOutNote(m, dragState.srcDept);
-      showToast(note ? `「${m.name}」の異動を下書きに追加しました。${note}` : `「${m.name}」の異動を下書きに追加しました。正式な組織にはまだ反映されていません。`, !!note);
-      logHist('下書き編集', `${m.name} を ${deptNameById(targetId)} へ異動`);
+      showToast(note ? tt('toast.transferAddedWithNote', { name: m.name, note }) : tt('toast.transferAdded', { name: m.name }), !!note);
+      logHist(tt('hist.draftEdit'), tt('hist.memberTransferred', { name: m.name, dept: deptNameById(targetId) }));
     }
   }
-  if (dragState.kind === 'dept') logHist('下書き編集', `部門「${NODES.find(n => n.id === dragState.id)?.deptName}」を ${parentName(targetId)} 配下へ移動`);
+  if (dragState.kind === 'dept') logHist(tt('hist.draftEdit'), tt('hist.deptMoved', { name: NODES.find(n => n.id === dragState.id)?.deptName, parent: parentName(targetId) }));
   clearDnDStyles();
   markEdited();
   PLAN = null; // 編集したら保存済み計画は無効化
@@ -2434,11 +2445,12 @@ function applyDrop(targetId) {
 function openDrawer(deptId, highlightMemId) {
   drawerDept = deptId;
   const node = NODES.find(n => n.id === deptId);
-  const list = [...MEMBERS.values()].filter(m => !m.deleted && m.deptIds.has(deptId)).sort((a, b) => String(a.name).localeCompare(b.name, 'ja'));
+  const cmp = window.OrgI18n ? window.OrgI18n.collator().compare : ((a, b) => String(a).localeCompare(String(b), 'ja'));
+  const list = [...MEMBERS.values()].filter(m => !m.deleted && m.deptIds.has(deptId)).sort((a, b) => cmp(String(a.name), String(b.name)));
   $('drawer-dept').textContent = node ? node.deptName : '';
-  $('drawer-count').textContent = `${list.length} 名`;
+  $('drawer-count').textContent = tt('count.members', { count: list.length });
   const body = $('drawer-list');
-  body.innerHTML = list.length ? '' : '<div class="drawer-empty">直属メンバーなし</div>';
+  body.innerHTML = list.length ? '' : `<div class="drawer-empty">${esc(tt('drawer.noDirectMembers'))}</div>`;
   list.forEach(m => body.appendChild(memberRow(m, deptId)));
   $('drawer').hidden = false;
   if (highlightMemId) {
@@ -2458,7 +2470,7 @@ function memberRow(m, deptId) {
     `<span class="mgrip">⠿</span>` +
     `<span class="mavatar">${esc(initials(m.name))}</span>` +
     `<span class="mbody"><span class="mname ${m.status === '退職' ? 'st-r' : ''}">${esc(m.name)}</span>` +
-    `<span class="mmeta">${esc([m.title, others.length ? '兼任: ' + others.join('、') : ''].filter(Boolean).join(' ・ '))}</span></span>`;
+    `<span class="mmeta">${esc([m.title, others.length ? tt('member.concurrentMeta', { depts: others.join(tt('punct.list')) }) : ''].filter(Boolean).join(' ・ '))}</span></span>`;
   el.addEventListener('dragstart', (e) => {
     dragState = { kind: 'member', id: m.id, srcDept: deptId };
     el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', m.id);
@@ -2475,7 +2487,7 @@ function operations() {
     if (n.type !== 'dept') return;
     if (n.isNew && !n.deleted) {
       ops.push({ type: 'DEPT_CREATE', name: n.deptName, to: parentName(n.parentId), _to: n.parentId, _id: n.id, _kind: 'dept' });
-      if (n.leaderId) ops.push({ type: 'DEPT_SET_LEADER', name: n.deptName, from: 'なし', to: `責任者: なし → ${MEMBERS.get(n.leaderId)?.name || '?'}`, _id: n.id, _kind: 'dept' });
+      if (n.leaderId) ops.push({ type: 'DEPT_SET_LEADER', name: n.deptName, from: tt('common.none'), to: tt('diff.leaderChange', { from: tt('common.none'), to: MEMBERS.get(n.leaderId)?.name || '?' }), _id: n.id, _kind: 'dept' });
       return;
     }
     if (n.deleted && !n.isNew) { ops.push({ type: 'DEPT_DELETE', name: n.deptName, _id: n.id, _kind: 'dept' }); return; }
@@ -2483,34 +2495,34 @@ function operations() {
     if (deptRenamed(n)) ops.push({ type: 'DEPT_RENAME', name: n.origName, to: n.deptName, _id: n.id, _kind: 'dept' });
     if (deptChanged(n)) ops.push({ type: 'DEPT_MOVE', name: n.deptName, from: parentName(ORIG.get(n.id)), to: parentName(n.parentId), _from: ORIG.get(n.id), _to: n.parentId, _id: n.id, _kind: 'dept' });
     if (deptLeaderChanged(n)) {
-      const dep = (s) => [...(s || [])].map(id => MEMBERS.get(id)?.name).filter(Boolean).join('、') || 'なし';
+      const dep = (s) => [...(s || [])].map(id => MEMBERS.get(id)?.name).filter(Boolean).join(tt('punct.list')) || tt('common.none');
       const mainChanged = (n.leaderId || null) !== (n.origLeaderId || null);
       const depChanged = sig(n.deputyIds || new Set()) !== sig(n.origDeputyIds || new Set());
       const parts = [];
-      if (mainChanged) parts.push(`主: ${MEMBERS.get(n.origLeaderId)?.name || 'なし'} → ${MEMBERS.get(n.leaderId)?.name || 'なし'}`);
-      if (depChanged) parts.push(`副: ${dep(n.origDeputyIds)} → ${dep(n.deputyIds)}`);
-      ops.push({ type: 'DEPT_SET_LEADER', name: n.deptName, from: MEMBERS.get(n.origLeaderId)?.name || 'なし', to: parts.join(' ／ '), _id: n.id, _kind: 'dept' });
+      if (mainChanged) parts.push(tt('diff.mainLeaderChange', { from: MEMBERS.get(n.origLeaderId)?.name || tt('common.none'), to: MEMBERS.get(n.leaderId)?.name || tt('common.none') }));
+      if (depChanged) parts.push(tt('diff.deputyLeaderChange', { from: dep(n.origDeputyIds), to: dep(n.deputyIds) }));
+      ops.push({ type: 'DEPT_SET_LEADER', name: n.deptName, from: MEMBERS.get(n.origLeaderId)?.name || tt('common.none'), to: parts.join(tt('punct.slash')), _id: n.id, _kind: 'dept' });
     }
   });
   MEMBERS.forEach(m => {
-    if (m.isNew && !m.deleted) { ops.push({ type: 'MEMBER_CREATE', name: m.name, to: [...m.deptIds].map(deptNameById).join('、'), title: m.title, _id: m.id, _kind: 'member' }); return; }
+    if (m.isNew && !m.deleted) { ops.push({ type: 'MEMBER_CREATE', name: m.name, to: [...m.deptIds].map(deptNameById).join(tt('punct.list')), title: m.title, _id: m.id, _kind: 'member' }); return; }
     if (m.deleted && !m.isNew) { ops.push({ type: 'MEMBER_DELETE', name: m.name, _id: m.id, _kind: 'member' }); return; }
     if (m.deleted) return;  // 追加→削除 は相殺
-    if (memChanged(m)) ops.push({ type: 'MEMBER_MOVE', name: m.name, from: [...m.origDeptIds].map(deptNameById).join('、') || 'なし', to: [...m.deptIds].map(deptNameById).join('、') || 'なし', _id: m.id, _kind: 'member' });
+    if (memChanged(m)) ops.push({ type: 'MEMBER_MOVE', name: m.name, from: [...m.origDeptIds].map(deptNameById).join(tt('punct.list')) || tt('common.none'), to: [...m.deptIds].map(deptNameById).join(tt('punct.list')) || tt('common.none'), _id: m.id, _kind: 'member' });
     if (memUpdated(m)) {
       const parts = [];
-      if ((m.title || '') !== (m.origTitle || '')) parts.push(`役職: ${m.origTitle || 'なし'} → ${m.title || 'なし'}`);
-      if ((m.leaderId || null) !== (m.origLeaderId || null)) parts.push(`上長: ${MEMBERS.get(m.origLeaderId)?.name || 'なし'} → ${MEMBERS.get(m.leaderId)?.name || 'なし'}`);
-      ops.push({ type: 'MEMBER_UPDATE', name: m.name, to: parts.join(' ／ '), _id: m.id, _kind: 'member' });
+      if ((m.title || '') !== (m.origTitle || '')) parts.push(tt('diff.titleChange', { from: m.origTitle || tt('common.none'), to: m.title || tt('common.none') }));
+      if ((m.leaderId || null) !== (m.origLeaderId || null)) parts.push(tt('diff.managerChange', { from: MEMBERS.get(m.origLeaderId)?.name || tt('common.none'), to: MEMBERS.get(m.leaderId)?.name || tt('common.none') }));
+      ops.push({ type: 'MEMBER_UPDATE', name: m.name, to: parts.join(tt('punct.slash')), _id: m.id, _kind: 'member' });
     }
-    if (memPrimaryChanged(m)) ops.push({ type: 'MEMBER_SET_PRIMARY', name: m.name, from: deptNameById(m.origPrimaryDept) || 'なし', to: deptNameById(m.primaryDept) || 'なし', _id: m.id, _kind: 'member' });
+    if (memPrimaryChanged(m)) ops.push({ type: 'MEMBER_SET_PRIMARY', name: m.name, from: deptNameById(m.origPrimaryDept) || tt('common.none'), to: deptNameById(m.primaryDept) || tt('common.none'), _id: m.id, _kind: 'member' });
   });
   return ops;
 }
-const parentName = (pid) => (pid === ROOT_ID || !pid) ? (NODES.find(n => n.type === 'root')?.name || 'ルート') : (NODES.find(n => n.id === pid)?.deptName || '?');
+const parentName = (pid) => (pid === ROOT_ID || !pid) ? (NODES.find(n => n.type === 'root')?.name || tt('org.rootShort')) : (NODES.find(n => n.id === pid)?.deptName || '?');
 
-const OP_LABEL = { DEPT_CREATE: '追加', DEPT_RENAME: '改名', DEPT_MOVE: '移動', DEPT_SET_LEADER: '更新', DEPT_DELETE: '削除', MEMBER_CREATE: '追加', MEMBER_MOVE: '異動', MEMBER_UPDATE: '更新', MEMBER_SET_PRIMARY: '主部門', MEMBER_DELETE: '削除' };
-const OP_CHIP = { DEPT_CREATE: '部門追加', DEPT_RENAME: '改名', DEPT_MOVE: '部門移動', DEPT_SET_LEADER: '責任者変更', DEPT_DELETE: '部門削除', MEMBER_CREATE: 'メンバー追加', MEMBER_MOVE: '異動', MEMBER_UPDATE: '更新', MEMBER_SET_PRIMARY: '主部門変更', MEMBER_DELETE: 'メンバー削除' };
+const opLabel = (type) => tt(`op.label.${type}`);
+const opChip = (type) => tt(`op.chip.${type}`);
 const OP_CLS = { DEPT_CREATE: 'create', DEPT_RENAME: 'rename', DEPT_MOVE: 'move', DEPT_SET_LEADER: 'rename', DEPT_DELETE: 'del', MEMBER_CREATE: 'create', MEMBER_MOVE: 'transfer', MEMBER_UPDATE: 'rename', MEMBER_SET_PRIMARY: 'transfer', MEMBER_DELETE: 'del' };
 
 // ---- リスク判定（表示用の軽量指標）----
@@ -2527,18 +2539,18 @@ function riskOf(o) {
   if (o.type === 'MEMBER_CREATE') return 'medium';   // 招待が飛ぶ
   return 'low';
 }
-const RISK_LABEL = { low: 'Low', medium: 'Medium', high: 'High' };
+const riskLabel = (risk) => tt(`risk.${risk}`);
 function riskCounts(ops) { const c = { low: 0, medium: 0, high: 0 }; ops.forEach(o => c[riskOf(o)]++); return c; }
 
 // ---- 変更行の Before / After ----
 function opBeforeAfter(o) {
-  if (o.type === 'DEPT_CREATE') return { b: '（なし）', a: `${o.to} 配下に新設` };
+  if (o.type === 'DEPT_CREATE') return { b: tt('common.noneParen'), a: tt('diff.deptCreateAfter', { parent: o.to }) };
   if (o.type === 'DEPT_RENAME') return { b: o.name, a: o.to };
-  if (o.type === 'DEPT_MOVE') return { b: `親: ${parentName(o._from)}`, a: `親: ${parentName(o._to)}` };
-  if (o.type === 'DEPT_SET_LEADER') { const n = NODES.find(x => x.id === o._id); return { b: `責任者: ${MEMBERS.get(n?.origLeaderId)?.name || 'なし'}`, a: `責任者: ${MEMBERS.get(n?.leaderId)?.name || 'なし'}` }; }
-  if (o.type === 'DEPT_DELETE' || o.type === 'MEMBER_DELETE') return { b: '在籍', a: '削除' };
-  if (o.type === 'MEMBER_CREATE') return { b: '（なし）', a: `${o.to}${o.title ? ` ・ ${o.title}` : ''}` };
-  if (o.type === 'MEMBER_UPDATE') return { b: '現状', a: o.to };
+  if (o.type === 'DEPT_MOVE') return { b: tt('diff.parentValue', { parent: parentName(o._from) }), a: tt('diff.parentValue', { parent: parentName(o._to) }) };
+  if (o.type === 'DEPT_SET_LEADER') { const n = NODES.find(x => x.id === o._id); return { b: tt('diff.leaderValue', { name: MEMBERS.get(n?.origLeaderId)?.name || tt('common.none') }), a: tt('diff.leaderValue', { name: MEMBERS.get(n?.leaderId)?.name || tt('common.none') }) }; }
+  if (o.type === 'DEPT_DELETE' || o.type === 'MEMBER_DELETE') return { b: tt('diff.active'), a: tt('diff.delete') };
+  if (o.type === 'MEMBER_CREATE') return { b: tt('common.noneParen'), a: `${o.to}${o.title ? ` ・ ${o.title}` : ''}` };
+  if (o.type === 'MEMBER_UPDATE') return { b: tt('diff.current'), a: o.to };
   return { b: o.from, a: o.to };   // MEMBER_MOVE
 }
 // 1オブジェクト分の草稿変更を元に戻す（既存の状態モデルの範囲内で復元）
@@ -2576,26 +2588,26 @@ function planPhase() {
 }
 function renderHeaderState(opsLen) {
   const cd = $('chip-draft');
-  if (opsLen) { cd.className = 'stchip st-amber'; cd.textContent = `未保存の変更 ${opsLen}件${LAST_EDIT ? ` ・ ${fmtTime(LAST_EDIT)}` : ''}`; }
-  else { cd.className = 'stchip st-gray'; cd.textContent = '変更なし'; }
+  if (opsLen) { cd.className = 'stchip st-amber'; cd.textContent = tt('status.unsavedChanges', { count: opsLen, time: LAST_EDIT ? ` ・ ${fmtTime(LAST_EDIT)}` : '' }); }
+  else { cd.className = 'stchip st-gray'; cd.textContent = tt('status.noChanges'); }
   // 常駐の安全条: 下書きがある時だけ表示（実行前は Lark に反映されない・撤销可能を明示）
   const ds = $('draftSafe');
-  if (ds) { ds.hidden = !opsLen; if (opsLen) $('ds-count').textContent = `${opsLen}件`; }
+  if (ds) { ds.hidden = !opsLen; if (opsLen) $('ds-count').textContent = tt('count.items', { count: opsLen }); }
   const cp = $('chip-plan'); const ph = planPhase();
   const map = {
-    none: ['st-gray', '実行プラン未保存'],
-    saved: ['st-amber', '実行プラン保存済み・実行待ち'],
-    partial: ['st-amber', '一部実行済み'],
-    failed: ['st-red', '実行に失敗した項目あり'],
-    done: ['st-green', '実行済み']
+    none: ['st-gray', tt('status.planUnsaved')],
+    saved: ['st-amber', tt('status.planSaved')],
+    partial: ['st-amber', tt('status.partialDone')],
+    failed: ['st-red', tt('status.failedItems')],
+    done: ['st-green', tt('status.done')]
   };
   cp.className = 'stchip ' + map[ph][0]; cp.textContent = map[ph][1];
   // メインアクション（状態機械）
   const btn = $('actionMain');
-  if (ph === 'done') { btn.disabled = false; btn.textContent = '再読み込みして反映'; btn.onclick = load; btn.title = 'Lark に反映済み。最新の組織を再読み込みします'; }
-  else if (ph === 'saved' || ph === 'partial') { btn.disabled = false; btn.textContent = '実行する…'; btn.onclick = () => { switchTab('review'); confirmExec(); }; btn.title = '実行するまで Lark は変更されません。押すと最終確認画面が開きます'; }
-  else if (opsLen) { btn.disabled = false; btn.textContent = `実行プランを保存（${opsLen}件）`; btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = '下書きを実行プランとして保存します（この時点では Lark に未反映）'; }
-  else { btn.disabled = true; btn.textContent = '変更なし'; btn.onclick = null; btn.title = '部門を選んで組織を編集できます'; }
+  if (ph === 'done') { btn.disabled = false; btn.textContent = tt('action.reloadApplied'); btn.onclick = load; btn.title = tt('action.reloadAppliedTitle'); }
+  else if (ph === 'saved' || ph === 'partial') { btn.disabled = false; btn.textContent = tt('action.execute'); btn.onclick = () => { switchTab('review'); confirmExec(); }; btn.title = tt('action.executeTitle'); }
+  else if (opsLen) { btn.disabled = false; btn.textContent = tt('action.savePlan', { count: opsLen }); btn.onclick = () => { switchTab('review'); showSaveForm(); }; btn.title = tt('action.savePlanTitle'); }
+  else { btn.disabled = true; btn.textContent = tt('status.noChanges'); btn.onclick = null; btn.title = tt('action.noChangesTitle'); }
 }
 
 function renderDiff() {
@@ -2613,35 +2625,35 @@ function renderDiff() {
   $('review-empty').hidden = ops.length > 0;
   $('review-summary').innerHTML = ops.length
     ? `<div class="rs-grid">
-         <div class="rs-cell"><span class="rs-num">${ops.length}</span><span class="rs-lbl">変更件数</span></div>
-         <div class="rs-cell"><span class="rs-num">${(cnt.DEPT_MOVE || 0) + (cnt.DEPT_CREATE || 0) + (cnt.DEPT_RENAME || 0) + (cnt.DEPT_DELETE || 0)}</span><span class="rs-lbl">部門</span></div>
-         <div class="rs-cell"><span class="rs-num">${memberIds.size}</span><span class="rs-lbl">対象メンバー</span></div>
-         <div class="rs-cell ${risks.high ? 'rs-risk' : ''}"><span class="rs-num">${risks.high + risks.medium}</span><span class="rs-lbl">要注意（High ${risks.high}）</span></div>
+         <div class="rs-cell"><span class="rs-num">${ops.length}</span><span class="rs-lbl">${esc(tt('review.changeCount'))}</span></div>
+         <div class="rs-cell"><span class="rs-num">${(cnt.DEPT_MOVE || 0) + (cnt.DEPT_CREATE || 0) + (cnt.DEPT_RENAME || 0) + (cnt.DEPT_DELETE || 0)}</span><span class="rs-lbl">${esc(tt('review.departments'))}</span></div>
+         <div class="rs-cell"><span class="rs-num">${memberIds.size}</span><span class="rs-lbl">${esc(tt('review.targetMembers'))}</span></div>
+         <div class="rs-cell ${risks.high ? 'rs-risk' : ''}"><span class="rs-num">${risks.high + risks.medium}</span><span class="rs-lbl">${esc(tt('review.attention', { high: risks.high }))}</span></div>
        </div>
-       <div class="rs-chips">${Object.keys(OP_CHIP).filter(k => cnt[k]).map(k => `<span class="chip chip-${OP_CLS[k]}">${OP_CHIP[k]} ${cnt[k]}</span>`).join('')}</div>
-       <div class="rs-note">下書きの変更です。実行プランの保存 → 手動実行までは、正式な組織には反映されません。</div>`
+       <div class="rs-chips">${Object.keys(OP_CLS).filter(k => cnt[k]).map(k => `<span class="chip chip-${OP_CLS[k]}">${esc(opChip(k))} ${cnt[k]}</span>`).join('')}</div>
+       <div class="rs-note">${esc(tt('review.draftNote'))}</div>`
     : '';
   $('diff-list').innerHTML = ops.map(o => {
     const risk = riskOf(o);
     const ba = opBeforeAfter(o);
     const impact = o._kind === 'dept' && (o.type === 'DEPT_MOVE' || o.type === 'DEPT_DELETE')
-      ? (() => { const s = subtreeMembers(o._id); return `影響: 部門 ${s.depts} ・ メンバー ${s.members} 名`; })()
+      ? (() => { const s = subtreeMembers(o._id); return tt('review.impact', { depts: s.depts, members: s.members }); })()
       : '';
     return `<div class="diff-item">
       <div class="di-head">
-        <span class="tag tag-${OP_CLS[o.type]}">[${OP_LABEL[o.type]}]</span>
+        <span class="tag tag-${OP_CLS[o.type]}">[${esc(opLabel(o.type))}]</span>
         <span class="di-name">${esc(o.name)}</span>
-        <span class="risk risk-${risk}">${RISK_LABEL[risk]}</span>
+        <span class="risk risk-${risk}">${esc(riskLabel(risk))}</span>
       </div>
       <div class="di-ba"><span class="di-b">${esc(ba.b)}</span><span class="arrow">→</span><span class="di-a">${esc(ba.a)}</span></div>
       ${impact ? `<div class="di-impact">${esc(impact)}</div>` : ''}
       <div class="di-ops">
-        <button class="di-btn di-locate" data-kind="${o._kind}" data-id="${esc(o._id)}">表示</button>
-        <button class="di-btn di-undo" data-kind="${o._kind}" data-id="${esc(o._id)}">取り消す</button>
+        <button class="di-btn di-locate" data-kind="${o._kind}" data-id="${esc(o._id)}">${esc(tt('action.show'))}</button>
+        <button class="di-btn di-undo" data-kind="${o._kind}" data-id="${esc(o._id)}">${esc(tt('action.undo'))}</button>
       </div>
     </div>`;
   }).join('');
-  $('diff-list').querySelectorAll('.di-undo').forEach(b => b.onclick = () => { revertOp(b.dataset.kind, b.dataset.id); logHist('取り消し', '変更を1件取り消しました'); });
+  $('diff-list').querySelectorAll('.di-undo').forEach(b => b.onclick = () => { revertOp(b.dataset.kind, b.dataset.id); logHist(tt('hist.undo'), tt('hist.undoOne')); });
   $('diff-list').querySelectorAll('.di-locate').forEach(b => b.onclick = () => locateObj(b.dataset.kind, b.dataset.id));
   renderHeaderState(ops.length);
   renderActions();
@@ -2657,15 +2669,15 @@ function renderLoadedPlan() {
   $('diffPanel') && ($('diffPanel').hidden = false);
   $('review-summary').innerHTML =
     `<div class="rs-note" style="color:var(--primary);background:var(--primary-soft);border-color:#D6E4FD;display:flex;gap:8px;align-items:center;justify-content:space-between;">
-       <span>読み込んだ実行プラン「${esc(p.name || '')}」・${p.execOps.length} 件</span>
-       <button id="loaded-close" class="di-btn">閉じる</button></div>`;
+       <span>${esc(tt('plan.loadedNote', { name: p.name || '', count: p.execOps.length }))}</span>
+       <button id="loaded-close" class="di-btn">${esc(tt('drawer.close'))}</button></div>`;
   const lc = $('loaded-close'); if (lc) lc.onclick = () => { PLAN = null; render(); renderDiff(); };
   $('diff-list').innerHTML = p.execOps.map(o => `
     <div class="diff-item">
       <div class="di-head">
-        <span class="tag tag-${OP_CLS[o.opType] || 'move'}">[${OP_LABEL[o.opType] || o.opType}]</span>
+        <span class="tag tag-${OP_CLS[o.opType] || 'move'}">[${esc(opLabel(o.opType) || o.opType)}]</span>
         <span class="di-name">${esc(o.targetName || '')}</span>
-        ${o.deleteFlag ? '<span class="risk risk-high">High</span>' : ''}
+        ${o.deleteFlag ? `<span class="risk risk-high">${esc(riskLabel('high'))}</span>` : ''}
       </div>
       <div class="di-ba"><span class="di-b">${esc(o.beforeText || o.fromName || '—')}</span><span class="arrow">→</span><span class="di-a">${esc(o.afterText || o.toName || '—')}</span></div>
     </div>`).join('');
@@ -2677,39 +2689,40 @@ async function openPlanList() {
   closeMore();
   cancelMove(); closeAddBar(); closeLeaderBar();
   $('planOverlay').hidden = false;
-  $('plan-list').innerHTML = '<div class="sr-empty">読み込み中…</div>';
+  $('plan-list').innerHTML = `<div class="sr-empty">${esc(tt('status.loading'))}</div>`;
   try {
     const r = await (await fetch('/api/plans')).json();
     if (!r.ok) throw new Error(r.error);
     renderPlanRows(r.plans || []);
-  } catch (e) { $('plan-list').innerHTML = `<div class="act-note act-err">一覧の取得に失敗しました：${esc(String(e.message || e))}</div>`; }
+  } catch (e) { $('plan-list').innerHTML = `<div class="act-note act-err">${esc(tt('plan.listFailed'))}: ${esc(String(e.message || e))}</div>`; }
 }
 function closePlanList() { $('planOverlay').hidden = true; }
 const PLAN_STATUS_CLS = { '予約済み': 'st-amber', '実行中': 'st-amber', '完了': 'st-green', '部分失敗': 'st-red', '失敗': 'st-red' };
-const PLAN_STATUS_LABEL = { '予約済み': '実行待ち', '実行中': '実行中', '完了': '完了', '部分失敗': '部分失敗', '失敗': '失敗' };
+const planStatusLabel = (status) => tt(`plan.status.${status}`) === `plan.status.${status}` ? (PLAN_STATUS_LABEL_FALLBACK[status] || status || '—') : tt(`plan.status.${status}`);
+const PLAN_STATUS_LABEL_FALLBACK = { '予約済み': '実行待ち', '実行中': '実行中', '完了': '完了', '部分失敗': '部分失敗', '失敗': '失敗' };
 function renderPlanRows(plans) {
   const box = $('plan-list');
-  if (!plans.length) { box.innerHTML = '<div class="sr-empty">保存された実行プランはありません。</div>'; return; }
+  if (!plans.length) { box.innerHTML = `<div class="sr-empty">${esc(tt('plan.empty'))}</div>`; return; }
   box.innerHTML = plans.map((p, i) => {
     const done = p.status === '完了' || p.status === '実行中' || p.status === '部分失敗';
     const stCls = PLAN_STATUS_CLS[p.status] || 'st-gray';
     return `<div class="plan-row">
       <div class="plan-main">
-        <div class="plan-name">${esc(p.name)}<span class="stchip ${stCls}" style="margin-left:8px;">${esc(PLAN_STATUS_LABEL[p.status] || p.status || '—')}</span></div>
-        <div class="plan-meta">${esc(p.summary || `${p.opCount} 件`)}${p.effectiveDate ? ` ・ 目安 ${esc(p.effectiveDate)}` : ''}${p.createdBy ? ` ・ ${esc(p.createdBy)}` : ''}${p.result ? ` ・ ${esc(p.result)}` : ''}</div>
+        <div class="plan-name">${esc(p.name)}<span class="stchip ${stCls}" style="margin-left:8px;">${esc(planStatusLabel(p.status))}</span></div>
+        <div class="plan-meta">${esc(p.summary || tt('count.items', { count: p.opCount }))}${p.effectiveDate ? ` ・ ${esc(tt('plan.estimate', { date: p.effectiveDate }))}` : ''}${p.createdBy ? ` ・ ${esc(p.createdBy)}` : ''}${p.result ? ` ・ ${esc(p.result)}` : ''}</div>
       </div>
-      <button class="act ${done || !p.opCount ? '' : 'act-primary'} plan-open" data-i="${i}" ${(done || !p.opCount) ? 'disabled' : ''}>${done ? '実行済み' : (p.opCount ? 'この画面で開く' : '再開不可')}</button>
+      <button class="act ${done || !p.opCount ? '' : 'act-primary'} plan-open" data-i="${i}" ${(done || !p.opCount) ? 'disabled' : ''}>${esc(done ? tt('plan.executed') : (p.opCount ? tt('plan.openHere') : tt('plan.unavailable')))}</button>
     </div>`;
   }).join('');
   [...box.querySelectorAll('.plan-open')].forEach(b => b.onclick = () => loadSavedPlan(plans[+b.dataset.i]));
 }
 function loadSavedPlan(p) {
   if (!p || !p.opCount) return;
-  if (operations().length) { showToast('未保存の下書きがあります。先に破棄または保存してください。', true); return; }
+  if (operations().length) { showToast(tt('plan.unsavedDraftWarning'), true); return; }
   PLAN = { planRecId: p.recId, name: p.name, planUrl: BASE_URL, execOps: p.ops.map(o => ({ ...o })), loaded: true };
   closePlanList();
   switchTab('review'); renderDiff();
-  showToast(`実行プラン「${p.name}」を読み込みました。内容を確認して手動実行できます。`);
+  showToast(tt('plan.loadedToast', { name: p.name }));
 }
 $('planList').onclick = openPlanList;
 $('plan-close').onclick = closePlanList;
@@ -2853,12 +2866,12 @@ function showSaveForm() {
   const minTime = nowLocalInput();
   el.innerHTML =
     `<div class="act-form">
-       <label class="act-lbl">プラン名</label>
-       <input id="f-name" class="act-input" value="組織変更 ${new Date().toISOString().slice(0, 10)}">
-       <label class="act-lbl">実行目安日時</label>
+       <label class="act-lbl">${esc(tt('plan.name'))}</label>
+       <input id="f-name" class="act-input" value="${esc(tt('plan.defaultName', { date: new Date().toISOString().slice(0, 10) }))}">
+       <label class="act-lbl">${esc(tt('plan.effectiveDate'))}</label>
        <input id="f-date" class="act-input" type="datetime-local" value="${minTime}" min="${minTime}">
-       <div class="act-hint">※ 自動実行ではありません。保存後、実行前レビューで手動実行すると Lark に反映されます。日時は実行目安として記録されます。</div>
-       <div class="act-row"><button id="f-save" class="act act-primary">実行プランを保存</button><button id="f-cancel" class="act">キャンセル</button></div>
+       <div class="act-hint">${esc(tt('plan.dateHint'))}</div>
+       <div class="act-row"><button id="f-save" class="act act-primary">${esc(tt('action.saveExecutionPlan'))}</button><button id="f-cancel" class="act">${esc(tt('action.cancel'))}</button></div>
      </div>`;
   $('f-name').focus();
   $('f-save').onclick = doSave;
@@ -2866,26 +2879,26 @@ function showSaveForm() {
 }
 async function doSave() {
   const ops = buildExecOps(); if (!ops.length) return;
-  const name = ($('f-name').value || '').trim() || '組織変更';
+  const name = ($('f-name').value || '').trim() || tt('plan.defaultNameShort');
   // datetime-local の "YYYY-MM-DDTHH:mm" を台帳の "YYYY-MM-DD HH:mm:ss" 表記へ整形（送信内容の意味は不変）
   let eff = ($('f-date').value || '').trim().replace('T', ' ');
   const rawDate = $('f-date').value;
   if (rawDate && new Date(rawDate).getTime() < Date.now() - 60 * 1000) {
-    setAct('過去の日時は指定できません。現在以降の実行目安日時を選択してください。', true);
+    setAct(tt('plan.pastDateError'), true);
     return;
   }
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(eff)) eff += ':00';
-  setAct('実行プランを保存しています…');
+  setAct(tt('plan.saving'));
   try {
     const r = await postJSON('/api/plan', { name, effectiveDate: eff, summary: summaryText(), operations: ops });
     if (!r.ok) throw new Error(r.error);
     PLAN = { planRecId: r.planRecId, planUrl: r.planUrl, name, execOps: ops.map((o, i) => ({ ...o, opRecId: r.opRecIds[i] })) };
-    logHist('計画保存', `「${name}」（${ops.length} 件）を Base 台帳に保存`);
+    logHist(tt('hist.planSaved'), tt('hist.planSavedDetail', { name, count: ops.length }));
     renderDiff();
-  } catch (e) { setAct('実行プランの保存に失敗しました: ' + (e.message || e), true); logHist('計画保存失敗', String((e && e.message) || e)); }
+  } catch (e) { setAct(tt('plan.saveFailed', { error: e.message || e }), true); logHist(tt('hist.planSaveFailed'), String((e && e.message) || e)); }
 }
 function groupNames(list) {
-  return (list || []).map(g => g.name || g.chatId).filter(Boolean).join('、') || 'なし';
+  return (list || []).map(g => g.name || g.chatId).filter(Boolean).join(tt('punct.list')) || tt('common.none');
 }
 function roleChatPreflightHtml(items = []) {
   if (!items.length) return '';
@@ -2899,10 +2912,10 @@ function roleChatPreflightHtml(items = []) {
     const impact = x.impact || {};
     const notes = [...(impact.notes || []), ...(x.errors || [])].filter(Boolean).join(' / ');
     const cls = (x.status === 'failed' || x.status === 'not_configured') ? 'act-err' : (notes ? 'act-warn' : '');
-    const title = `${impact.oldTitle || 'なし'} → ${impact.newTitle || 'なし'}`;
-    return `<li class="${cls}"><b>${esc(x.name || '')}</b> <span>${esc(title)}</span><br>退出: ${esc(groupNames(impact.removeGroups))}<br>参加: ${esc(groupNames(impact.addGroups))}${notes ? `<br><span>${esc(notes)}</span>` : ''}</li>`;
+    const title = `${impact.oldTitle || tt('common.none')} → ${impact.newTitle || tt('common.none')}`;
+    return `<li class="${cls}"><b>${esc(x.name || '')}</b> <span>${esc(title)}</span><br>${esc(tt('roleChat.remove'))}: ${esc(groupNames(impact.removeGroups))}<br>${esc(tt('roleChat.add'))}: ${esc(groupNames(impact.addGroups))}${notes ? `<br><span>${esc(notes)}</span>` : ''}</li>`;
   }).join('');
-  return `<div class="act-note role-chat-preflight"><b>職位チャットグループ同期の影響</b><div class="role-chat-summary">対象 ${items.length}件 ・ 退出 ${removeCount}群 ・ 参加 ${addCount}群${warnCount ? ` ・ 要確認 ${warnCount}件` : ''}</div><ul>${rows}</ul></div>`;
+  return `<div class="act-note role-chat-preflight"><b>${esc(tt('roleChat.impactTitle'))}</b><div class="role-chat-summary">${esc(tt('roleChat.summary', { target: items.length, remove: removeCount, add: addCount, warn: warnCount ? tt('roleChat.warnPart', { count: warnCount }) : '' }))}</div><ul>${rows}</ul></div>`;
 }
 async function confirmExec(limit) {
   const start = PLAN.doneCount || 0;                       // 実行済み件数（部分実行のカーソル）
@@ -2915,43 +2928,43 @@ async function confirmExec(limit) {
   // 確定前に dry-run で下見し、Lark 上で特定できないメンバーを洗い出す（実行して初めて失敗するのを避ける）
   let preflight = '';
   try {
-    setAct('実行内容を確認しています…');
+    setAct(tt('exec.checking'));
     const pre = await postJSON('/api/execute', { planRecId: PLAN.planRecId, ops: batch, dryRun: true });
     const bad = (pre && pre.unresolvedMembers) || [];
     if (bad.length) {
-      const names = bad.slice(0, 5).map(x => esc(x.name)).join('、');
-      preflight = `<div class="act-note act-err"><b>Lark 上で特定できないメンバーが ${bad.length} 名います</b>（${names}${bad.length > 5 ? ' ほか' : ''}）。
-        該当する変更は実行時に失敗します。台帳のメールアドレスをご確認ください。</div>`;
+      const names = bad.slice(0, 5).map(x => esc(x.name)).join(tt('punct.list'));
+      preflight = `<div class="act-note act-err"><b>${esc(tt('exec.unresolvedMembersTitle', { count: bad.length }))}</b>（${names}${bad.length > 5 ? esc(tt('exec.moreNames')) : ''}）。
+        ${esc(tt('exec.unresolvedMembersBody'))}</div>`;
     }
     const chatImpacts = (pre && pre.roleChatImpacts) || [];
     if (chatImpacts.length) preflight += roleChatPreflightHtml(chatImpacts);
     if (hasRoleTitleChange && pre && pre.roleChatPreflightOk === false) {
-      $('diff-actions').innerHTML = `<div class="act-note act-err">職位チャットグループの影響を確認できないため、実行を停止しました。チャットグループ管理テーブルまたは権限を確認してください。</div>${roleChatPreflightHtml(chatImpacts)}`;
+      $('diff-actions').innerHTML = `<div class="act-note act-err">${esc(tt('exec.roleChatBlocked'))}</div>${roleChatPreflightHtml(chatImpacts)}`;
       return;
     }
     renderActions();
   } catch (e) {
     renderActions();
     if (hasRoleTitleChange) {
-      setAct('職位チャットグループの影響を確認できないため、実行を停止しました: ' + ((e && e.message) || e), true);
+      setAct(tt('exec.roleChatBlockedWithError', { error: ((e && e.message) || e) }), true);
       return;
     }
   }
   openConfirm({
-    title: '実行の最終確認',
+    title: tt('exec.confirmTitle'),
     body:
-      `<div class="cfm-lead">この操作で<b>初めて Lark の正式な組織が変更されます</b>。ここまでの下書き・実行プランはすべて未反映でした。実行目安日時による自動実行には対応していません。</div>
+      `<div class="cfm-lead">${tt('exec.confirmLeadHtml')}</div>
        ${preflight}
        <div class="cfm-grid">
-         <div><span class="cfm-num">${n}</span><span class="cfm-lbl">実行する変更</span></div>
-         <div><span class="cfm-num">${depts}</span><span class="cfm-lbl">対象部門</span></div>
-         <div><span class="cfm-num">${mems}</span><span class="cfm-lbl">対象メンバー</span></div>
-         <div class="${del ? 'cfm-danger' : ''}"><span class="cfm-num">${del}</span><span class="cfm-lbl">削除（復元不可）</span></div>
+         <div><span class="cfm-num">${n}</span><span class="cfm-lbl">${esc(tt('exec.changeCount'))}</span></div>
+         <div><span class="cfm-num">${depts}</span><span class="cfm-lbl">${esc(tt('exec.targetDepts'))}</span></div>
+         <div><span class="cfm-num">${mems}</span><span class="cfm-lbl">${esc(tt('exec.targetMembers'))}</span></div>
+         <div class="${del ? 'cfm-danger' : ''}"><span class="cfm-num">${del}</span><span class="cfm-lbl">${esc(tt('exec.deletes'))}</span></div>
        </div>
-       <div class="cfm-meta">プラン: ${esc(PLAN.name || '組織変更')} ・ 反映タイミング: <b>今すぐ</b></div>
-       <div class="act-note act-warn">確定すると、Lark の正式な組織データに反映されます。移動・改名はあとから変更できますが、<b>削除は元に戻せません</b>。</div>`,
-    checkLabel: '変更内容と影響範囲を確認しました。確定すると正式な組織データに反映されることを理解しています。',
-    okLabel: `実行する（${n}件）`,
+       <div class="cfm-meta">${esc(tt('exec.planMeta', { name: PLAN.name || tt('plan.defaultNameShort') }))} ・ <b>${esc(tt('exec.now'))}</b></div>
+       <div class="act-note act-warn">${tt('exec.warningHtml')}</div>`,
+    checkLabel: tt('exec.confirmCheck'),
+    okLabel: tt('exec.executeCount', { count: n }),
     onOk: () => execNow(limit)
   });
 }
@@ -2975,7 +2988,7 @@ function openConfirm({ title, body, checkLabel, okLabel, okClass, onOk }) {
 function closeConfirm() { $('cfmOverlay').hidden = true; }
 $('cfmOverlay').addEventListener('click', (e) => { if (e.target.id === 'cfmOverlay') closeConfirm(); });
 async function execNow(limit) {
-  setAct('実行中です。Lark へ反映しています…');
+  setAct(tt('exec.running'));
   try {
     // 実行済み分を除いた「残り」だけ送る（再実行による二重作成・二重削除を防止）
     const start = PLAN.doneCount || 0;
@@ -2985,20 +2998,20 @@ async function execNow(limit) {
     if (!r.ok && !Array.isArray(r.results)) throw new Error(r.error);
     PLAN.doneCount = start + r.results.length;
     PLAN.results = r;
-    logHist('実行', `成功 ${r.success}件 ・ 失敗 ${r.fail}件（プラン: ${r.planStatus}）`);
+    logHist(tt('hist.execute'), tt('hist.executeDetail', { success: r.success, fail: r.fail, status: planStatusLabel(r.planStatus) }));
     renderDiff();
     const hasChatSyncNote = Array.isArray(r.results) && r.results.some(x => String(x.chatSync || '').trim());
     // 全件成功で完了したら自動で再同期（失敗あり・部分実行時は結果を残して手動のまま）
     if (r.fail === 0 && PLAN.doneCount >= PLAN.execOps.length && !hasChatSyncNote) {
-      showToast(`${r.success}件の変更を実行しました。最新の組織を再読み込みしています…`);
+      showToast(tt('exec.successReloading', { count: r.success }));
       setTimeout(() => load(true), 1400);
     } else if (r.fail > 0 || r.chatFail > 0) {
-      const chatMsg = r.chatFail ? ` / 職位チャットグループ同期失敗 ${r.chatFail}件` : '';
-      showToast(`実行結果を確認してください（組織変更: 成功 ${r.success}件・失敗 ${r.fail}件${chatMsg}）。`, true);
+      const chatMsg = r.chatFail ? tt('exec.chatFailPart', { count: r.chatFail }) : '';
+      showToast(tt('exec.checkResultToast', { success: r.success, fail: r.fail, chat: chatMsg }), true);
     } else if (hasChatSyncNote) {
-      showToast('組織変更は成功しました。チャットグループ同期の詳細を確認してください。', true);
+      showToast(tt('exec.chatSyncCheckToast'), true);
     }
-  } catch (e) { setAct('実行に失敗しました: ' + (e.message || e), true); logHist('実行失敗', String((e && e.message) || e)); }
+  } catch (e) { setAct(tt('exec.failed', { error: e.message || e }), true); logHist(tt('hist.executeFailed'), String((e && e.message) || e)); }
 }
 async function postJSON(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -3021,32 +3034,32 @@ function renderActions() {
   if (!ops.length && !(PLAN && PLAN.loaded)) { el.innerHTML = ''; return; }
   if (!PLAN) {
     el.innerHTML =
-      `<button id="btn-save" class="act act-primary">実行プランを保存</button>` +
-      `<div class="act-hint">保存しても <b>Lark には反映されません</b>。手動実行で初めて反映されます。</div>`;
+      `<button id="btn-save" class="act act-primary">${esc(tt('action.saveExecutionPlan'))}</button>` +
+      `<div class="act-hint">${tt('plan.saveHintHtml')}</div>`;
     $('btn-save').onclick = showSaveForm;
   } else if (!PLAN.results) {
     // 新規作成を含む計画は一括実行のみ（部分実行だと仮ID new|x の解決マップがリクエストをまたげないため）
     const hasCreate = PLAN.execOps.some(o => o.opType === 'DEPT_CREATE' || o.opType === 'MEMBER_CREATE');
     el.innerHTML =
-      `<div class="act-note">実行プランを保存しました（<b>まだ Lark に未反映</b>）<a href="${PLAN.planUrl}" target="_blank">台帳を開く ↗</a></div>` +
-      (hasCreate ? `<div class="act-hint">新規作成を含む計画のため、まとめて実行のみになります</div>`
-                 : `<button id="btn-test" class="act act-primary">まず1件のみ実行</button>`) +
-      `<button id="btn-all" class="act act-danger">すべて実行（${PLAN.execOps.length}件）</button>` +
-      `<div class="act-hint">「実行」を押すと、この時点で初めて Lark の組織に反映されます。</div>`;
+      `<div class="act-note">${tt('plan.savedNoteHtml')}<a href="${PLAN.planUrl}" target="_blank">${esc(tt('toolbar.openBase'))}</a></div>` +
+      (hasCreate ? `<div class="act-hint">${esc(tt('plan.createOnlyAll'))}</div>`
+                 : `<button id="btn-test" class="act act-primary">${esc(tt('exec.testOne'))}</button>`) +
+      `<button id="btn-all" class="act act-danger">${esc(tt('exec.executeAll', { count: PLAN.execOps.length }))}</button>` +
+      `<div class="act-hint">${esc(tt('exec.applyHint'))}</div>`;
     const bt = $('btn-test'); if (bt) bt.onclick = () => confirmExec(1);
     $('btn-all').onclick = () => confirmExec();
   } else {
     const r = PLAN.results;
     const rows = r.results.map(x => {
       const chatFailed = x.chatSyncStatus === 'failed';
-      return `<div class="res ${x.ok ? 'ok' : 'ng'}"><div>${x.ok ? '✓ 組織変更 成功' : '✗ 組織変更 失敗'}: ${esc(x.name)}${x.error ? '：' + esc(x.error) : ''}</div>${x.chatSync ? `<div class="res-sub ${chatFailed ? 'ng' : ''}">${chatFailed ? '✗' : '✓'} 職位チャットグループ同期${chatFailed ? '失敗' : ''}: ${esc(x.chatSync)}</div>` : ''}</div>`;
+      return `<div class="res ${x.ok ? 'ok' : 'ng'}"><div>${x.ok ? '✓' : '✗'} ${esc(tt(x.ok ? 'exec.orgChangeSuccess' : 'exec.orgChangeFailed'))}: ${esc(x.name)}${x.error ? ': ' + esc(x.error) : ''}</div>${x.chatSync ? `<div class="res-sub ${chatFailed ? 'ng' : ''}">${chatFailed ? '✗' : '✓'} ${esc(tt(chatFailed ? 'exec.roleChatSyncFailed' : 'exec.roleChatSync'))}: ${esc(x.chatSync)}</div>` : ''}</div>`;
     }).join('');
     const remaining = PLAN.execOps.length - (PLAN.doneCount || 0);
     el.innerHTML =
-      `<div class="act-note ${r.chatFail ? 'act-err' : ''}">実行結果: <b>組織変更 成功 ${r.success}件 ・ 失敗 ${r.fail}件${r.chatFail ? ` / 職位チャットグループ同期失敗 ${r.chatFail}件` : ''}</b>（プラン: ${esc(r.planStatus)}）</div>${rows}` +
-      (remaining > 0 ? `<button id="btn-all" class="act act-danger">残りを実行（${remaining}件）</button>` : '') +
-      `<button id="btn-refresh" class="act act-primary">再読み込みして反映</button>` +
-      `<div class="act-hint">Lark の組織と Base の台帳を更新しました。再読み込みで最新の状態を表示します。</div>`;
+      `<div class="act-note ${r.chatFail ? 'act-err' : ''}">${tt('exec.resultSummaryHtml', { success: r.success, fail: r.fail, chat: r.chatFail ? tt('exec.chatFailPart', { count: r.chatFail }) : '', status: esc(planStatusLabel(r.planStatus)) })}</div>${rows}` +
+      (remaining > 0 ? `<button id="btn-all" class="act act-danger">${esc(tt('exec.executeRemaining', { count: remaining }))}</button>` : '') +
+      `<button id="btn-refresh" class="act act-primary">${esc(tt('action.reloadApplied'))}</button>` +
+      `<div class="act-hint">${esc(tt('exec.reloadHint'))}</div>`;
     const ba = $('btn-all'); if (ba) ba.onclick = () => confirmExec();
     $('btn-refresh').onclick = () => load(true);
   }
@@ -3070,16 +3083,16 @@ bindDomainMenu('displayMenuBtn', 'displayMenu');
 bindDomainMenu('collabMenuBtn', 'collabMenu');
 bindDomainMenu('manageMenuBtn', 'manageMenu');
 document.addEventListener('click', (e) => { if (!e.target.closest('.more-wrap')) closeMore(); });
-$('reload').onclick = () => { closeMore(); guardUnsaved('再読み込みすると、未保存の変更は破棄されます。', () => load(false)); };
-$('forceReload').onclick = () => { closeMore(); guardUnsaved('強制同期すると、未保存の変更は破棄されます。', () => load(true)); };
+$('reload').onclick = () => { closeMore(); guardUnsaved(tt('guard.reload'), () => load(false)); };
+$('forceReload').onclick = () => { closeMore(); guardUnsaved(tt('guard.forceReload'), () => load(true)); };
 $('reset').onclick = () => {
   closeMore();
   const n = operations().length; if (!n) return;
   openConfirm({
-    title: '変更を破棄',
-    body: `<div class="act-note act-warn">未保存の変更 <b>${n}件</b> をすべて破棄し、同期済みの組織の状態に戻します。この操作は下書きのみに影響し、正式な組織には影響しません。</div>`,
-    okLabel: `${n}件を破棄`,
-    onOk: () => { resetDraft(); logHist('破棄', `下書きの変更 ${n}件をすべて破棄`); }
+    title: tt('reset.title'),
+    body: `<div class="act-note act-warn">${tt('reset.bodyHtml', { count: n })}</div>`,
+    okLabel: tt('reset.ok', { count: n }),
+    onOk: () => { resetDraft(); logHist(tt('hist.discard'), tt('hist.discardDetail', { count: n })); }
   });
 };
 $('expandAll').onclick = () => { closeMore(); NODES.forEach(n => { if (isDisplayDept(n)) EXPANDED.add(n.id); }); render(); };
@@ -3164,7 +3177,7 @@ function setNoiseFilter(on) {
   if (FOCUS && isNoiseDeptId(FOCUS)) FOCUS = null;
   if (VIEW === 'chart') render();
   else renderAltBody();
-  showToast(HIDE_NOISE_DEPTS ? 'テスト/デモ部門を非表示にしました。' : 'テスト/デモ部門を表示しました。');
+  showToast(tt(HIDE_NOISE_DEPTS ? 'toast.noiseHidden' : 'toast.noiseShown'));
 }
 if ($('hideNoiseDepts')) {
   $('hideNoiseDepts').checked = HIDE_NOISE_DEPTS;
@@ -3174,7 +3187,11 @@ if ($('hideNoiseDepts')) {
 $('zoom-in').onclick = () => chart && chart.zoomIn();
 $('zoom-out').onclick = () => chart && chart.zoomOut();
 $('zoom-fit').onclick = () => chart && chart.fit();
-$('layout').onclick = () => { COMPACT = !COMPACT; $('layout').textContent = COMPACT ? '表示: コンパクト' : '表示: ツリー'; render(); };
+function updateLayoutButton() {
+  const btn = $('layout');
+  if (btn) btn.textContent = tt(COMPACT ? 'toolbar.layoutCompact' : 'toolbar.layoutTree');
+}
+$('layout').onclick = () => { COMPACT = !COMPACT; updateLayoutButton(); render(); };
 // 表示密度（簡潔 / 責任者 / 完全）
 function setDensity(name) {
   if (!['simple', 'full'].includes(name)) return;
@@ -3289,21 +3306,21 @@ function deptChildListHTML(deptId) {
     const grand = NODES.filter(n => isDisplayDept(n) && n.parentId === c.id).length;
     return `<div class="dt-crow" data-detail-dept="${c.id}">
       <span class="dt-cav" style="color:${c.color};background:${softColor(c.color)}">${esc(initials(c.deptName))}</span>
-      <span class="dt-cbody"><span class="dt-cname">${esc(c.deptName)}</span>${leader ? `<span class="dt-csub">責任者 ${esc(leader)}</span>` : ''}</span>
+      <span class="dt-cbody"><span class="dt-cname">${esc(c.deptName)}</span>${leader ? `<span class="dt-csub">${esc(tt('dept.leaderBadge'))} ${esc(leader)}</span>` : ''}</span>
       <span class="olx-spacer"></span>
-      ${grand ? `<span class="dt-csubcnt">部門 ${grand}</span>` : ''}
-      <span class="dt-ccount">${displayDeptHeadcount(c.id)} 名</span>
+      ${grand ? `<span class="dt-csubcnt">${esc(tt('count.depts', { count: grand }))}</span>` : ''}
+      <span class="dt-ccount">${esc(tt('count.members', { count: displayDeptHeadcount(c.id) }))}</span>
     </div>`;
   }).join('');
-  return `<div class="dt-mlist"><div class="dt-mlist-h">子部門 <b>${kids.length}</b></div>${rows}</div>`;
+  return `<div class="dt-mlist"><div class="dt-mlist-h">${esc(tt('detail.childDepartments'))} <b>${kids.length}</b></div>${rows}</div>`;
 }
 function deptMemberListHTML(deptId) {
   const dept = NODES.find(n => n.id === deptId); if (!dept) return '';
-  const ms = deptMembers(deptId); if (!ms.length) return '<div class="dt-mlist"><div class="dt-mlist-h">直属メンバー <b>0</b> 名</div></div>';
+  const ms = deptMembers(deptId); if (!ms.length) return `<div class="dt-mlist"><div class="dt-mlist-h">${esc(tt('detail.directMembers'))} <b>0</b> ${esc(tt('unit.member'))}</div></div>`;
   const rows = ms.map(m => {
     const st = memberStatusShort(m);
-    const role = dept.leaderId === m.id ? '<span class="olx-badge olx-badge-lead">責任者</span>'
-      : (dept.deputyIds && dept.deputyIds.has(m.id)) ? '<span class="oc-flag flag-primary">副</span>' : '';
+    const role = dept.leaderId === m.id ? `<span class="olx-badge olx-badge-lead">${esc(tt('dept.leaderBadge'))}</span>`
+      : (dept.deputyIds && dept.deputyIds.has(m.id)) ? `<span class="oc-flag flag-primary">${esc(tt('detail.deputy'))}</span>` : '';
     return `<div class="dt-mrow" data-detail="${m.id}">
       <span class="dt-mav" style="color:${dept.color};background:${softColor(dept.color)}">${esc(initials(m.name))}</span>
       <span class="dt-mname ${st.resigned ? 'st-r' : ''}">${esc(m.name)}</span>
@@ -3311,50 +3328,50 @@ function deptMemberListHTML(deptId) {
       <span class="olx-spacer"></span>${role}${st.badge ? `<span class="oc-flag ${st.cls}">${st.badge}</span>` : ''}
     </div>`;
   }).join('');
-  return `<div class="dt-mlist"><div class="dt-mlist-h">所属メンバー <b>${ms.length}</b> 名</div>${rows}</div>`;
+  return `<div class="dt-mlist"><div class="dt-mlist-h">${esc(tt('detail.assignedMembers'))} <b>${ms.length}</b> ${esc(tt('unit.member'))}</div>${rows}</div>`;
 }
 function showDetail(kind, id) {
   SELECTED = { kind, id };
   const box = $('detail-body');
-  const row = (lbl, val) => `<div class="dt-row"><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span></div>`;
+  const row = (lbl, val) => `<div class="dt-row"><span class="dt-lbl">${esc(lbl)}</span><span class="dt-val">${val}</span></div>`;
   const baRow = (lbl, b, a, editField = '') => {
-    const editAttrs = editField ? ` data-edit-field="${editField}" title="編集できます"` : '';
+    const editAttrs = editField ? ` data-edit-field="${editField}" title="${esc(tt('detail.editable'))}"` : '';
     const cls = `dt-row${b === a ? '' : ' dt-changed'}${editField ? ' dt-editable' : ''}`;
-    const empty = lbl === '役職' ? '役職なし' : 'なし';
-    const fmt = (v) => (lbl === '役職' && (!v || v === 'なし')) ? '役職なし' : (v || empty);
+    const empty = lbl === tt('field.title') ? tt('field.noTitle') : tt('common.none');
+    const fmt = (v) => (lbl === tt('field.title') && (!v || v === 'なし')) ? tt('field.noTitle') : (v || empty);
     const val = b === a ? esc(fmt(a)) : `<s>${esc(fmt(b))}</s> <span class="arrow">→</span> <b>${esc(fmt(a))}</b>`;
-    const editBtn = editField ? `<button class="dt-edit-btn" type="button" data-edit-field="${editField}">編集</button>` : '';
-    return `<div class="${cls}"${editAttrs}><span class="dt-lbl">${lbl}</span><span class="dt-val">${val}</span>${editBtn}</div>`;
+    const editBtn = editField ? `<button class="dt-edit-btn" type="button" data-edit-field="${editField}">${esc(tt('detail.edit'))}</button>` : '';
+    return `<div class="${cls}"${editAttrs}><span class="dt-lbl">${esc(lbl)}</span><span class="dt-val">${val}</span>${editBtn}</div>`;
   };
   if (kind === 'dept') {
     const n = NODES.find(x => x.id === id);
-    if (!n) { box.innerHTML = '<div class="sp-empty"><div class="spe-title">対象が見つかりません</div></div>'; switchTab('detail'); return; }
+    if (!n) { box.innerHTML = `<div class="sp-empty"><div class="spe-title">${esc(tt('detail.notFound'))}</div></div>`; switchTab('detail'); return; }
     const kids = NODES.filter(x => isDisplayDept(x) && x.parentId === id).length;
     const leader = n.leaderId && MEMBERS.get(n.leaderId);
-    const state = n.isNew ? '<span class="stchip st-green">新規（下書き）</span>' : n.deleted ? '<span class="stchip st-red">削除予定（下書き）</span>' : (deptChanged(n) || deptRenamed(n)) ? '<span class="stchip st-amber">変更あり（下書き）</span>' : '<span class="stchip st-gray">変更なし</span>';
+    const state = n.isNew ? `<span class="stchip st-green">${esc(tt('status.newDraft'))}</span>` : n.deleted ? `<span class="stchip st-red">${esc(tt('status.deleteDraft'))}</span>` : (deptChanged(n) || deptRenamed(n)) ? `<span class="stchip st-amber">${esc(tt('status.changedDraft'))}</span>` : `<span class="stchip st-gray">${esc(tt('status.noChanges'))}</span>`;
     box.innerHTML =
       `<div class="dt-head"><span class="dt-avatar" style="color:${n.color};background:${softColor(n.color)}">${esc(n.avatarChar)}</span>
-         <div><div class="dt-name">${esc(n.deptName)}</div><div class="dt-sub">部門 ${state}</div></div></div>` +
-      baRow('部門名', n.origName, n.deptName, n.deleted ? '' : 'deptName') +
-      baRow('親部門', n.isNew ? 'なし' : parentName(ORIG.get(n.id)), parentName(n.parentId)) +
-      row('部門責任者', leader ? (esc(leader.name) + (leader.deptIds.has(n.id) ? '' : ' <span class="stchip st-gray">他部門所属</span>')) : '未設定') +
-      row('部門人数', `${displayDeptHeadcount(id)} 名（表示中の子部門含む）`) + row('うち直属', `${deptDirectCount(id)} 名`) + row('子部門数', `${kids}`) +
-      (n.path ? row('パス', esc(n.path)) : '') +
-      `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">組織図で表示</button></div>` +
+         <div><div class="dt-name">${esc(n.deptName)}</div><div class="dt-sub">${esc(tt('field.department'))} ${state}</div></div></div>` +
+      baRow(tt('field.departmentName'), n.origName, n.deptName, n.deleted ? '' : 'deptName') +
+      baRow(tt('field.parentDepartment'), n.isNew ? tt('common.none') : parentName(ORIG.get(n.id)), parentName(n.parentId)) +
+      row(tt('field.departmentOwner'), leader ? (esc(leader.name) + (leader.deptIds.has(n.id) ? '' : ` <span class="stchip st-gray">${esc(tt('dept.externalAffiliation'))}</span>`)) : tt('field.unset')) +
+      row(tt('field.departmentMembers'), tt('detail.deptHeadcount', { count: displayDeptHeadcount(id) })) + row(tt('field.directMembers'), tt('count.members', { count: deptDirectCount(id) })) + row(tt('field.childDeptCount'), `${kids}`) +
+      (n.path ? row(tt('field.path'), esc(n.path)) : '') +
+      `<div class="dt-ops"><button class="di-btn" onclick="locateDept('${id}')">${esc(tt('detail.showInChart'))}</button></div>` +
       deptChildListHTML(id) +
       deptMemberListHTML(id);
   } else {
     const m = MEMBERS.get(id);
-    if (!m) { box.innerHTML = '<div class="sp-empty"><div class="spe-title">対象が見つかりません</div></div>'; switchTab('detail'); return; }
-    const state = m.isNew ? '<span class="stchip st-green">新規（下書き）</span>' : m.deleted ? '<span class="stchip st-red">削除予定（下書き）</span>' : (memChanged(m) || memUpdated(m)) ? '<span class="stchip st-amber">変更あり（下書き）</span>' : '<span class="stchip st-gray">変更なし</span>';
+    if (!m) { box.innerHTML = `<div class="sp-empty"><div class="spe-title">${esc(tt('detail.notFound'))}</div></div>`; switchTab('detail'); return; }
+    const state = m.isNew ? `<span class="stchip st-green">${esc(tt('status.newDraft'))}</span>` : m.deleted ? `<span class="stchip st-red">${esc(tt('status.deleteDraft'))}</span>` : (memChanged(m) || memUpdated(m)) ? `<span class="stchip st-amber">${esc(tt('status.changedDraft'))}</span>` : `<span class="stchip st-gray">${esc(tt('status.noChanges'))}</span>`;
     box.innerHTML =
       `<div class="dt-head"><span class="dt-avatar">${esc(initials(m.name))}</span>
-         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub">${esc(m.title || '役職なし')} ・ メンバー ${state}${m.status === '退職' ? ' <span class="stchip st-red">退職</span>' : ''}</div></div></div>` +
-      baRow('所属部門', [...m.origDeptIds].map(deptNameById).join('、') || 'なし', [...m.deptIds].map(deptNameById).join('、') || 'なし') +
-      baRow('役職', m.origTitle || 'なし', m.title || 'なし', m.deleted ? '' : 'memberTitle') +
-      baRow('上長', MEMBERS.get(m.origLeaderId)?.name || 'なし', MEMBERS.get(m.leaderId)?.name || 'なし', 'memberLeader') +
-      (m.email ? row('メール', esc(m.email)) : '') +
-      `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">組織図で表示</button>${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">異動先を選択</button>`}</div>`;
+         <div><div class="dt-name">${esc(m.name)}</div><div class="dt-sub">${esc(m.title || tt('field.noTitle'))} ・ ${esc(tt('field.member'))} ${state}${m.status === '退職' ? ` <span class="stchip st-red">${esc(tt('memberFlag.resigned'))}</span>` : ''}</div></div></div>` +
+      baRow(tt('field.assignedDepartment'), [...m.origDeptIds].map(deptNameById).join(tt('punct.list')) || tt('common.none'), [...m.deptIds].map(deptNameById).join(tt('punct.list')) || tt('common.none')) +
+      baRow(tt('field.title'), m.origTitle || tt('common.none'), m.title || tt('common.none'), m.deleted ? '' : 'memberTitle') +
+      baRow(tt('field.manager'), MEMBERS.get(m.origLeaderId)?.name || tt('common.none'), MEMBERS.get(m.leaderId)?.name || tt('common.none'), 'memberLeader') +
+      (m.email ? row(tt('field.email'), esc(m.email)) : '') +
+      `<div class="dt-ops"><button class="di-btn" onclick="locateMember('${id}','')">${esc(tt('detail.showInChart'))}</button>${m.isNew || m.deleted ? '' : `<button class="di-btn" onclick="startMoveMember('${id}','${[...m.deptIds][0] || ''}')">${esc(tt('detail.selectTransferDestination'))}</button>`}</div>`;
   }
   switchTab('detail');
 }
@@ -3367,9 +3384,9 @@ function searchMatches(q) {
   MEMBERS.forEach(m => {
     if (!memberInVisibleDept(m) || !(m.name || '').toLowerCase().includes(q)) return;
     const depts = HIDE_NOISE_DEPTS ? [...m.deptIds].filter(did => isDisplayDept(NODES.find(n => n.id === did))) : [...m.deptIds];
-    if (!depts.length) { res.push({ kind: 'member', id: m.id, deptId: '', name: m.name, sub: [m.title, '未所属'].filter(Boolean).join(' ・ ') }); return; }
+    if (!depts.length) { res.push({ kind: 'member', id: m.id, deptId: '', name: m.name, sub: [m.title, tt('field.unassigned')].filter(Boolean).join(' ・ ') }); return; }
     const multi = depts.length > 1;              // 兼任: 部門ごとに1件（それぞれ精確に定位）
-    depts.forEach(did => res.push({ kind: 'member', id: m.id, deptId: did, name: m.name, sub: [m.title, deptNameById(did) + (multi ? '（兼任）' : '')].filter(Boolean).join(' ・ ') }));
+    depts.forEach(did => res.push({ kind: 'member', id: m.id, deptId: did, name: m.name, sub: [m.title, deptNameById(did) + (multi ? tt('field.concurrentParen') : '')].filter(Boolean).join(' ・ ') }));
   });
   return res.slice(0, 12);
 }
@@ -3383,15 +3400,15 @@ function renderSearch(q) {
     const m = MEMBERS.get(r.id); return !!m && (m.isNew || m.deleted || memChanged(m) || memUpdated(m));
   };
   const groups = [
-    { label: '変更あり（下書き）', items: res.filter(isChanged) },
-    { label: '部門', items: res.filter(r => r.kind === 'dept' && !isChanged(r)) },
-    { label: 'メンバー', items: res.filter(r => r.kind === 'member' && !isChanged(r)) }
+    { label: tt('status.changedDraft'), items: res.filter(isChanged) },
+    { label: tt('field.department'), items: res.filter(r => r.kind === 'dept' && !isChanged(r)) },
+    { label: tt('field.member'), items: res.filter(r => r.kind === 'member' && !isChanged(r)) }
   ].filter(g => g.items.length);
   box.innerHTML = groups.map(g =>
     `<div class="sr-group">${esc(g.label)}</div>` +
     g.items.map(r =>
       `<div class="sr-item" data-kind="${r.kind}" data-id="${r.id}" data-deptid="${r.deptId || ''}">
-         <span class="sr-icon sr-${r.kind}">${r.kind === 'dept' ? '部' : '人'}</span>
+         <span class="sr-icon sr-${r.kind}">${esc(tt(r.kind === 'dept' ? 'search.deptIcon' : 'search.memberIcon'))}</span>
          <span class="sr-body"><span class="sr-name">${esc(r.name)}</span>${r.sub ? `<span class="sr-sub">${esc(r.sub)}</span>` : ''}</span>
        </div>`).join('')).join('');
   [...box.querySelectorAll('.sr-item')].forEach(el => el.onclick = () => pickResult(el.dataset.kind, el.dataset.id, el.dataset.deptid));
@@ -3469,30 +3486,46 @@ function csvOpen() {
 function csvClose() {
   $('csvOverlay').hidden = true; $('csv-paste').value = ''; $('csv-file').value = '';
   $('csv-preview').hidden = true; $('csv-preview').innerHTML = '';
-  $('csv-summary').textContent = ''; $('csv-apply').disabled = true; $('csv-apply').textContent = '下書きに反映';
+  $('csv-summary').textContent = ''; $('csv-apply').disabled = true; $('csv-apply').textContent = tt('csv.apply');
   CSV_RESULT = null; CSV_META = null;
 }
 function dlDeptTemplate() {
-  const csv = ['アクション,部門名,親部門,新部門名',
-    '追加,セールス推進部,Sales,',
-    '移動,（対象部門名）,（移動先の部門名）,',
-    '改名,（対象部門名）,,（新しい部門名）',
-    '削除,（対象部門名）,,'].join('\r\n');
-  dlCsv(csv, '部門インポート_テンプレート.csv');
+  dlCsv(tt('csv.deptTemplateContent').replace(/\n/g, '\r\n'), tt('csv.deptTemplateFile'));
 }
 function dlMemTemplate() {
-  const csv = ['アクション,氏名,所属部門,役職,上長,メールアドレス,携帯番号,引継先',
-    '異動,（対象者名）,Sales;Presales,,,,,',
-    '更新,（対象者名）,,シニアSA,（上長の氏名）,,,',
-    '追加,新人太郎,（部門名）,SA,（上長の氏名）,taro@example.com,+819012345678,',
-    '削除,（対象者名）,,,,,,（引継先の氏名・任意）'].join('\r\n');
-  dlCsv(csv, 'メンバーインポート_テンプレート.csv');
+  dlCsv(tt('csv.memberTemplateContent').replace(/\n/g, '\r\n'), tt('csv.memberTemplateFile'));
 }
 function dlCsv(csv, filename) {
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv' });   // BOM 付き = 日本語 Excel で文字化けしない
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = filename; a.click();
   URL.revokeObjectURL(a.href);
+}
+
+const CSV_HEADER_ALIASES = {
+  action: ['アクション', 'Action', 'action', '动作', '操作'],
+  deptName: ['部門名', 'Department', 'Department name', 'Dept', '部门名', '部门'],
+  parentDept: ['親部門', 'Parent department', 'Parent dept', '父部门', '上级部门'],
+  newDeptName: ['新部門名', 'New department name', 'New dept name', '新部门名'],
+  memberName: ['氏名', 'Name', 'Member name', '姓名', '成员名'],
+  memberDepts: ['所属部門', 'Departments', 'Assigned departments', '所属部门'],
+  title: ['役職', 'Title', 'Job title', '职位'],
+  manager: ['上長', 'Manager', 'Leader', '上长'],
+  email: ['メールアドレス', 'Email', 'Email address', '邮箱地址', '邮箱'],
+  mobile: ['携帯番号', 'Mobile', 'Mobile number', '手机号'],
+  handover: ['引継先', 'Handover', 'Handover to', '交接人', '交接对象']
+};
+const CSV_ACTION_ALIASES = {
+  add: ['追加', 'Add', 'add', '添加', '新增'],
+  move: ['移動', '異動', 'Move', 'Transfer', 'move', 'transfer', '移动', '异动'],
+  update: ['更新', 'Update', 'update', '更新'],
+  rename: ['改名', 'Rename', 'rename', '改名', '重命名'],
+  delete: ['削除', 'Delete', 'delete', '删除'],
+  clear: ['なし', '無し', 'クリア', 'None', 'Clear', 'none', 'clear', '无', '清除', '解除']
+};
+function normalizeCsvAction(action) {
+  const raw = String(action || '').trim();
+  return Object.keys(CSV_ACTION_ALIASES).find(key => CSV_ACTION_ALIASES[key].includes(raw)) || '';
 }
 
 // ---- パース（カンマ/タブ自動判定・引用符対応・BOM除去）----
@@ -3516,27 +3549,27 @@ function parseTable(text) {
 }
 function csvParseText(text) {
   const table = parseTable(text);
-  if (!table.length) return { error: 'データがありません' };
+  if (!table.length) return { error: tt('csv.error.noData') };
   const head = table[0].map(s => String(s).trim());
-  const col = (name) => head.indexOf(name);
-  const iAct = col('アクション');
-  if (iAct < 0) return { error: 'ヘッダー行に「アクション」列が必要です。テンプレートをご利用ください' };
+  const col = (names) => names.map(name => head.indexOf(name)).find(i => i >= 0) ?? -1;
+  const iAct = col(CSV_HEADER_ALIASES.action);
+  if (iAct < 0) return { error: tt('csv.error.actionHeader') };
   const cell = (r, i) => i >= 0 ? String(r[i] || '').trim() : '';
-  if (col('氏名') >= 0) {   // メンバーCSV
-    const iName = col('氏名'), iDepts = col('所属部門'), iTitle = col('役職'), iLeader = col('上長'), iMail = col('メールアドレス'), iMob = col('携帯番号'), iHand = col('引継先');
+  if (col(CSV_HEADER_ALIASES.memberName) >= 0) {   // メンバーCSV
+    const iName = col(CSV_HEADER_ALIASES.memberName), iDepts = col(CSV_HEADER_ALIASES.memberDepts), iTitle = col(CSV_HEADER_ALIASES.title), iLeader = col(CSV_HEADER_ALIASES.manager), iMail = col(CSV_HEADER_ALIASES.email), iMob = col(CSV_HEADER_ALIASES.mobile), iHand = col(CSV_HEADER_ALIASES.handover);
     const rows = table.slice(1)
       .map((r, k) => ({ line: k + 2, action: cell(r, iAct), name: cell(r, iName), depts: cell(r, iDepts), title: cell(r, iTitle), leader: cell(r, iLeader), email: cell(r, iMail), mobile: cell(r, iMob), handover: cell(r, iHand) }))
       .filter(r => r.action || r.name);
     return { kind: 'member', rows };
   }
-  if (col('部門名') >= 0) {  // 部門CSV
-    const iName = col('部門名'), iParent = col('親部門'), iNew = col('新部門名');
+  if (col(CSV_HEADER_ALIASES.deptName) >= 0) {  // 部門CSV
+    const iName = col(CSV_HEADER_ALIASES.deptName), iParent = col(CSV_HEADER_ALIASES.parentDept), iNew = col(CSV_HEADER_ALIASES.newDeptName);
     const rows = table.slice(1)
       .map((r, k) => ({ line: k + 2, action: cell(r, iAct), name: cell(r, iName), parent: cell(r, iParent), newName: cell(r, iNew) }))
       .filter(r => r.action || r.name);
     return { kind: 'dept', rows };
   }
-  return { error: 'ヘッダー行に「部門名」（部門CSV）または「氏名」（メンバーCSV）が必要です' };
+  return { error: tt('csv.error.kindHeader') };
 }
 
 // ---- メンバーCSV 検証（読み取り専用・投影状態で逐行シミュレーション）----
@@ -3551,18 +3584,18 @@ function validateMemberRows(rows) {
   };
   const resolveLeader = (nm) => {
     const h = findMem(nm, '');
-    if (!h.length) return { err: `上長「${nm}」が見つかりません` };
-    if (h.length > 1) return { err: `上長「${nm}」が複数います（特定できません）` };
+    if (!h.length) return { err: tt('csv.error.managerNotFound', { name: nm }) };
+    if (h.length > 1) return { err: tt('csv.error.managerDuplicate', { name: nm }) };
     return { ref: h[0] };
   };
   const resolveDeptList = (s) => {
     const names = s.split(/[;；]/).map(x => x.trim()).filter(Boolean);
-    if (!names.length) return { err: '所属部門が空です（複数は ; 区切り）' };
+    if (!names.length) return { err: tt('csv.error.emptyDepartments') };
     const refs = [];
     for (const nm of names) {
       const hits = NODES.filter(n => n.type === 'dept' && !n.deleted && n.deptName === nm);
-      if (!hits.length) return { err: `部門「${nm}」が見つかりません` };
-      if (hits.length > 1) return { err: `部門「${nm}」が複数あります` };
+      if (!hits.length) return { err: tt('csv.error.deptNotFound', { name: nm }) };
+      if (hits.length > 1) return { err: tt('csv.error.deptDuplicate', { name: nm }) };
       refs.push(hits[0].id);
     }
     return { refs, names };
@@ -3571,135 +3604,137 @@ function validateMemberRows(rows) {
   for (const r of rows) {
     const out = { ...r, ok: false, msg: '', op: null };
     results.push(out);
-    if (!['異動', '更新', '追加', '削除'].includes(r.action)) { out.msg = `アクション「${r.action}」は不正です（異動 / 更新 / 追加 / 削除）`; continue; }
-    if (!r.name) { out.msg = '氏名が空です'; continue; }
-    if (r.action === '追加') {
-      if (!r.email) { out.msg = 'メールアドレスは必須です（招待の送付先）'; continue; }
+    const act = normalizeCsvAction(r.action);
+    if (!['move', 'update', 'add', 'delete'].includes(act)) { out.msg = tt('csv.error.invalidMemberAction', { action: r.action }); continue; }
+    if (!r.name) { out.msg = tt('csv.error.emptyMemberName'); continue; }
+    if (act === 'add') {
+      if (!r.email) { out.msg = tt('csv.error.emailRequired'); continue; }
       let dupMail = false; proj.forEach(v => { if (!v.deleted && v.email && v.email === r.email.toLowerCase()) dupMail = true; });
-      if (dupMail) { out.msg = `メール「${r.email}」は既に使われています`; continue; }
-      if (!r.mobile) { out.msg = '携帯番号は必須です（Lark アカウントの識別子）'; continue; }
+      if (dupMail) { out.msg = tt('csv.error.emailDuplicate', { email: r.email }); continue; }
+      if (!r.mobile) { out.msg = tt('csv.error.mobileRequired'); continue; }
       const d = resolveDeptList(r.depts); if (d.err) { out.msg = d.err; continue; }
       let leaderRef = null;
       if (r.leader) { const l = resolveLeader(r.leader); if (l.err) { out.msg = l.err; continue; } leaderRef = l.ref; }
       const tmp = `csvm#${newK++}`;
       proj.set(tmp, { name: r.name, email: r.email.toLowerCase(), deptIds: new Set(d.refs), title: r.title || '', leaderId: leaderRef, deleted: false });
-      out.ok = true; out.msg = `「${d.names.join('、')}」に追加（招待が送信されます）`;
+      out.ok = true; out.msg = tt('csv.msg.memberAdd', { depts: d.names.join(tt('punct.list')) });
       out.op = { kind: 'mcreate', tmp, name: r.name, email: r.email, mobile: r.mobile, title: r.title || '', deptRefs: d.refs, leaderRef };
       continue;
     }
     const hits = findMem(r.name, r.email);
-    if (!hits.length) { out.msg = `メンバー「${r.name}」が見つかりません`; continue; }
-    if (hits.length > 1) { out.msg = `「${r.name}」が複数います（メールアドレス列で特定してください）`; continue; }
+    if (!hits.length) { out.msg = tt('csv.error.memberNotFound', { name: r.name }); continue; }
+    if (hits.length > 1) { out.msg = tt('csv.error.memberDuplicate', { name: r.name }); continue; }
     const id = hits[0];
-    if (r.action === '異動') {
+    if (act === 'move') {
       const d = resolveDeptList(r.depts); if (d.err) { out.msg = d.err; continue; }
       const cur = proj.get(id);
-      if ([...cur.deptIds].sort().join() === [...d.refs].sort().join()) { out.ok = true; out.msg = '変更なし（スキップ）'; continue; }
+      if ([...cur.deptIds].sort().join() === [...d.refs].sort().join()) { out.ok = true; out.msg = tt('csv.msg.noChange'); continue; }
       cur.deptIds = new Set(d.refs);
-      out.ok = true; out.msg = `「${d.names.join('、')}」へ異動`; out.op = { kind: 'mmove', id, deptRefs: d.refs };
+      out.ok = true; out.msg = tt('csv.msg.memberMove', { depts: d.names.join(tt('punct.list')) }); out.op = { kind: 'mmove', id, deptRefs: d.refs };
       continue;
     }
-    if (r.action === '更新') {
+    if (act === 'update') {
       const cur = proj.get(id); const op = { kind: 'mupdate', id }; const parts = [];
-      if (r.title) { if (r.title !== cur.title) { op.title = r.title; parts.push(`役職→${r.title}`); cur.title = r.title; } }
+      if (r.title) { if (r.title !== cur.title) { op.title = r.title; parts.push(tt('csv.msg.titleTo', { title: r.title })); cur.title = r.title; } }
       if (r.leader) {
-        if (/^(なし|無し|クリア)$/.test(r.leader)) {   // 上長を解除
-          if (cur.leaderId) { op.leaderClear = true; parts.push('上長→解除'); cur.leaderId = null; }
+        if (normalizeCsvAction(r.leader) === 'clear') {
+          if (cur.leaderId) { op.leaderClear = true; parts.push(tt('csv.msg.managerClear')); cur.leaderId = null; }
         } else {
           const l = resolveLeader(r.leader); if (l.err) { out.msg = l.err; continue; }
-          if (l.ref === id) { out.msg = '自分自身を上長にはできません'; continue; }
-          if (l.ref !== cur.leaderId) { op.leaderRef = l.ref; parts.push(`上長→${proj.get(l.ref).name}`); cur.leaderId = l.ref; }
+          if (l.ref === id) { out.msg = tt('csv.error.selfManager'); continue; }
+          if (l.ref !== cur.leaderId) { op.leaderRef = l.ref; parts.push(tt('csv.msg.managerTo', { name: proj.get(l.ref).name })); cur.leaderId = l.ref; }
         }
       }
-      if (!r.title && !r.leader) { out.msg = '更新内容がありません（役職 または 上長 を入力）'; continue; }
-      if (!parts.length) { out.ok = true; out.msg = '変更なし（スキップ）'; continue; }
+      if (!r.title && !r.leader) { out.msg = tt('csv.error.noUpdateContent'); continue; }
+      if (!parts.length) { out.ok = true; out.msg = tt('csv.msg.noChange'); continue; }
       out.ok = true; out.msg = parts.join(' / '); out.op = op;
       continue;
     }
     // 削除（退職）: 任意で資源引継先を指定
     const warns = [];
-    if (NODES.some(n => n.type === 'dept' && !n.deleted && n.leaderId === id)) warns.push('部門長に設定中');
+    if (NODES.some(n => n.type === 'dept' && !n.deleted && n.leaderId === id)) warns.push(tt('csv.warn.deptOwner'));
     let isBoss = false; proj.forEach((v, k) => { if (k !== id && !v.deleted && v.leaderId === id) isBoss = true; });
-    if (isBoss) warns.push('他メンバーの上長');
+    if (isBoss) warns.push(tt('csv.warn.memberManager'));
     let handoverRef = null, handoverName = '';
     if (r.handover) {
       const h = findMem(r.handover, '');
-      if (!h.length) { out.msg = `引継先「${r.handover}」が見つかりません`; continue; }
-      if (h.length > 1) { out.msg = `引継先「${r.handover}」が複数います（特定できません）`; continue; }
-      if (h[0] === id) { out.msg = '引継先に本人は指定できません'; continue; }
+      if (!h.length) { out.msg = tt('csv.error.handoverNotFound', { name: r.handover }); continue; }
+      if (h.length > 1) { out.msg = tt('csv.error.handoverDuplicate', { name: r.handover }); continue; }
+      if (h[0] === id) { out.msg = tt('csv.error.selfHandover'); continue; }
       handoverRef = h[0]; handoverName = proj.get(h[0]).name;
     }
     proj.get(id).deleted = true;
     out.ok = true;
-    out.msg = '退職・アカウント削除' + (handoverName ? ` ／ 引継先: ${handoverName}` : '') + (warns.length ? `（注意: ${warns.join('・')}）` : '');
+    out.msg = tt('csv.msg.memberDelete') + (handoverName ? tt('csv.msg.handoverPart', { name: handoverName }) : '') + (warns.length ? tt('csv.msg.warnPart', { warns: warns.join('・') }) : '');
     out.op = { kind: 'mdelete', id, handoverRef };
   }
   return results;
 }
 
 // ---- 検証（読み取り専用・投影状態で逐行シミュレーション）----
-const ROOT_WORDS = ['', '組織全体', 'ルート', 'トップ', 'root', 'ROOT'];
+const ROOT_WORDS = ['', '組織全体', 'ルート', 'トップ', 'root', 'ROOT', 'Root', 'Top', 'Top level', 'Organization', 'Entire organization', '组织全体', '组织全局', '顶层', '根'];
 // テナント名（ルートカードの表示名）でもトップ階層を指定できるようにする
-const isRootWord = (nm) => ROOT_WORDS.includes(nm) || nm === (NODES.find(n => n.type === 'root')?.name || '');
+const isRootWord = (nm) => ROOT_WORDS.includes(nm) || nm === tt('org.rootName') || nm === tt('org.topLevel') || nm === (NODES.find(n => n.type === 'root')?.name || '');
 function validateDeptRows(rows) {
   const proj = new Map();   // id -> {name, parentId, deleted}（同一ファイル内の行を順に反映した投影）
   NODES.forEach(n => { if (n.type === 'dept') proj.set(n.id, { name: n.deptName, parentId: n.parentId, deleted: !!n.deleted }); });
   let newK = 0;
   const findByName = (nm) => { const hits = []; proj.forEach((v, id) => { if (!v.deleted && v.name === nm) hits.push(id); }); return hits; };
-  const nameOf = (ref) => ref === ROOT_ID ? 'トップ階層' : (proj.get(ref)?.name || '?');
+  const nameOf = (ref) => ref === ROOT_ID ? tt('org.topLevel') : (proj.get(ref)?.name || '?');
   const isDescProj = (target, anc) => { let cur = target; const seen = new Set(); while (cur && cur !== ROOT_ID && !seen.has(cur)) { if (cur === anc) return true; seen.add(cur); cur = proj.get(cur)?.parentId; } return false; };
   const hasChildProj = (id) => { let f = false; proj.forEach(v => { if (!v.deleted && v.parentId === id) f = true; }); return f; };
   const memberCountOf = (id) => { let c = 0; MEMBERS.forEach(m => { if (!m.deleted && m.deptIds.has(id)) c++; }); return c; };
   const resolveParent = (nm) => {
     if (isRootWord(nm)) return { ref: ROOT_ID };
     const h = findByName(nm);
-    if (!h.length) return { err: `親部門「${nm}」が見つかりません` };
-    if (h.length > 1) return { err: `親部門「${nm}」が複数あります（画面上で操作してください）` };
+    if (!h.length) return { err: tt('csv.error.parentNotFound', { name: nm }) };
+    if (h.length > 1) return { err: tt('csv.error.parentDuplicate', { name: nm }) };
     return { ref: h[0] };
   };
   const results = [];
   for (const r of rows) {
     const out = { ...r, ok: false, msg: '', op: null };
     results.push(out);
-    if (!['追加', '移動', '改名', '削除'].includes(r.action)) { out.msg = `アクション「${r.action}」は不正です（追加 / 移動 / 改名 / 削除）`; continue; }
-    if (!r.name) { out.msg = '部門名が空です'; continue; }
-    if (r.action === '追加') {
-      if (findByName(r.name).length) { out.msg = `「${r.name}」は既に存在します`; continue; }
+    const act = normalizeCsvAction(r.action);
+    if (!['add', 'move', 'rename', 'delete'].includes(act)) { out.msg = tt('csv.error.invalidDeptAction', { action: r.action }); continue; }
+    if (!r.name) { out.msg = tt('csv.error.emptyDeptName'); continue; }
+    if (act === 'add') {
+      if (findByName(r.name).length) { out.msg = tt('csv.error.nameExists', { name: r.name }); continue; }
       const p = resolveParent(r.parent); if (p.err) { out.msg = p.err; continue; }
       const tmp = `csv#${newK++}`;
       proj.set(tmp, { name: r.name, parentId: p.ref, deleted: false });
-      out.ok = true; out.msg = `「${nameOf(p.ref)}」配下に新設`; out.op = { kind: 'create', tmp, name: r.name, parentRef: p.ref };
+      out.ok = true; out.msg = tt('csv.msg.deptCreate', { parent: nameOf(p.ref) }); out.op = { kind: 'create', tmp, name: r.name, parentRef: p.ref };
       continue;
     }
     const hits = findByName(r.name);
-    if (!hits.length) { out.msg = `部門「${r.name}」が見つかりません`; continue; }
-    if (hits.length > 1) { out.msg = `「${r.name}」が複数あります（画面上で操作してください）`; continue; }
+    if (!hits.length) { out.msg = tt('csv.error.deptNotFound', { name: r.name }); continue; }
+    if (hits.length > 1) { out.msg = tt('csv.error.deptDuplicateOperate', { name: r.name }); continue; }
     const id = hits[0];
-    if (r.action === '移動') {
+    if (act === 'move') {
       const p = resolveParent(r.parent); if (p.err) { out.msg = p.err; continue; }
-      if (p.ref === id) { out.msg = '自分自身の配下へは移動できません'; continue; }
-      if (p.ref !== ROOT_ID && isDescProj(p.ref, id)) { out.msg = '自部門の配下へは移動できません（循環）'; continue; }
-      if (proj.get(id).parentId === p.ref) { out.ok = true; out.msg = '変更なし（スキップ）'; continue; }
+      if (p.ref === id) { out.msg = tt('csv.error.moveUnderSelf'); continue; }
+      if (p.ref !== ROOT_ID && isDescProj(p.ref, id)) { out.msg = tt('csv.error.moveUnderDescendant'); continue; }
+      if (proj.get(id).parentId === p.ref) { out.ok = true; out.msg = tt('csv.msg.noChange'); continue; }
       proj.get(id).parentId = p.ref;
-      out.ok = true; out.msg = `「${nameOf(p.ref)}」配下へ移動`; out.op = { kind: 'move', id, parentRef: p.ref };
+      out.ok = true; out.msg = tt('csv.msg.deptMove', { parent: nameOf(p.ref) }); out.op = { kind: 'move', id, parentRef: p.ref };
       continue;
     }
-    if (r.action === '改名') {
-      if (!r.newName) { out.msg = '新部門名が空です'; continue; }
-      if (r.newName === proj.get(id).name) { out.ok = true; out.msg = '変更なし（スキップ）'; continue; }
-      if (findByName(r.newName).length) { out.msg = `「${r.newName}」は既に存在します`; continue; }
+    if (act === 'rename') {
+      if (!r.newName) { out.msg = tt('csv.error.emptyNewDeptName'); continue; }
+      if (r.newName === proj.get(id).name) { out.ok = true; out.msg = tt('csv.msg.noChange'); continue; }
+      if (findByName(r.newName).length) { out.msg = tt('csv.error.nameExists', { name: r.newName }); continue; }
       proj.get(id).name = r.newName;
-      out.ok = true; out.msg = `「${r.newName}」に改名`; out.op = { kind: 'rename', id, newName: r.newName };
+      out.ok = true; out.msg = tt('csv.msg.deptRename', { name: r.newName }); out.op = { kind: 'rename', id, newName: r.newName };
       continue;
     }
     // 削除
-    if (hasChildProj(id)) { out.msg = `「${r.name}」には子部門があります（先に移動/削除してください）`; continue; }
+    if (hasChildProj(id)) { out.msg = tt('csv.error.hasChildDept', { name: r.name }); continue; }
     const mc = memberCountOf(id);
-    if (mc > 0) { out.msg = `「${r.name}」には ${mc} 名のメンバーがいます（先に異動してください）`; continue; }
+    if (mc > 0) { out.msg = tt('csv.error.hasMembers', { name: r.name, count: mc }); continue; }
     const node = NODES.find(n => n.id === id);
-    const warn = node && (node.count || 0) > mc ? '（注意: Lark 側に未同期メンバーがいる可能性）' : '';
+    const warn = node && (node.count || 0) > mc ? tt('csv.warn.unsyncedMembers') : '';
     proj.get(id).deleted = true;
-    out.ok = true; out.msg = `削除${warn}`; out.op = { kind: 'delete', id };
+    out.ok = true; out.msg = `${tt('csv.msg.delete')}${warn}`; out.op = { kind: 'delete', id };
   }
   return results;
 }
@@ -3718,7 +3753,7 @@ function applyCsvOps(results) {
       const parent = NODES.find(n => n.id === pid);
       NODES.push({
         id, parentId: pid, type: 'dept', deptName: op.name, name: op.name, origName: op.name, isNew: true, deleted: false,
-        sub: '責任者 未設定', hasLeader: false, avatarChar: initials(op.name), openId: '', path: '',
+        sub: tt('dept.leaderUnset'), hasLeader: false, avatarChar: initials(op.name), openId: '', path: '',
         count: 0, baseCount: 0, color: parent && parent.type === 'dept' ? parent.color : PALETTE[NODES.length % PALETTE.length]
       });
       expandAncestorsOf(id);
@@ -3768,24 +3803,29 @@ function runCsvCheck() {
   const fail = (msg) => { pv.hidden = false; pv.innerHTML = `<div class="act-note act-err">${esc(msg)}</div>`; $('csv-summary').textContent = ''; $('csv-apply').disabled = true; CSV_RESULT = null; };
   const parsed = csvParseText($('csv-paste').value);
   if (parsed.error) return fail(parsed.error);
-  if (!parsed.rows.length) return fail('データ行がありません');
+  if (!parsed.rows.length) return fail(tt('csv.error.noRows'));
   const results = parsed.kind === 'member' ? validateMemberRows(parsed.rows) : validateDeptRows(parsed.rows);
   CSV_RESULT = results;
   const okN = results.filter(r => r.ok && r.op).length;
   const fileEl = $('csv-file');
-  const fname = fileEl.files && fileEl.files[0] ? fileEl.files[0].name : '貼り付け';
+  const fname = fileEl.files && fileEl.files[0] ? fileEl.files[0].name : tt('csv.pasteSource');
   CSV_META = { kind: parsed.kind, content: $('csv-paste').value, rows: parsed.rows.length, applied: okN,
-    summary: `${parsed.kind === 'member' ? 'メンバー' : '部門'}CSV ・ ${fname} ・ ${okN}件反映` };
+    summary: tt('csv.auditSummary', { kind: parsed.kind === 'member' ? tt('csv.kindMember') : tt('csv.kindDept'), source: fname, count: okN }) };
   const skipN = results.filter(r => r.ok && !r.op).length;
   const ngN = results.filter(r => !r.ok).length;
-  const nameCol = parsed.kind === 'member' ? '氏名' : '部門名';
+  const nameCol = parsed.kind === 'member' ? tt('field.member') : tt('field.departmentName');
   pv.hidden = false;
-  pv.innerHTML = `<table class="csv-table"><thead><tr><th>行</th><th>アクション</th><th>${nameCol}</th><th>チェック結果</th></tr></thead><tbody>` +
+  pv.innerHTML = `<table class="csv-table"><thead><tr><th>${esc(tt('csv.col.line'))}</th><th>${esc(tt('csv.col.action'))}</th><th>${esc(nameCol)}</th><th>${esc(tt('csv.col.result'))}</th></tr></thead><tbody>` +
     results.map(r => `<tr class="${r.ok ? 'row-ok' : 'row-ng'}"><td>${r.line}</td><td>${esc(r.action)}</td><td>${esc(r.name)}</td><td>${r.ok ? '✓' : '✗'} ${esc(r.msg)}</td></tr>`).join('') +
     `</tbody></table>`;
-  $('csv-summary').textContent = `${parsed.kind === 'member' ? 'メンバー' : '部門'}CSV ・ 反映可能 ${okN}件` + (skipN ? ` ・ スキップ ${skipN}件` : '') + (ngN ? ` ・ エラー ${ngN}件（反映されません）` : '');
+  $('csv-summary').textContent = tt('csv.summary', {
+    kind: parsed.kind === 'member' ? tt('csv.kindMember') : tt('csv.kindDept'),
+    ok: okN,
+    skip: skipN ? tt('csv.skipPart', { count: skipN }) : '',
+    ng: ngN ? tt('csv.errorPart', { count: ngN }) : ''
+  });
   $('csv-apply').disabled = okN === 0;
-  $('csv-apply').textContent = okN ? `${okN}件を下書きに反映` : '下書きに反映';
+  $('csv-apply').textContent = okN ? tt('csv.applyCount', { count: okN }) : tt('csv.apply');
 }
 
 $('csvImport').onclick = csvOpen;
@@ -3804,7 +3844,7 @@ $('csv-apply').onclick = async () => {
     try { await postJSON('/api/csv-import', meta); } catch (_) {}
   }
 };
-$('csv-paste').addEventListener('input', () => { $('csv-apply').disabled = true; CSV_RESULT = null; CSV_META = null; $('csv-summary').textContent = '内容が変わりました。再チェックしてください'; });
+$('csv-paste').addEventListener('input', () => { $('csv-apply').disabled = true; CSV_RESULT = null; CSV_META = null; $('csv-summary').textContent = tt('csv.changed'); });
 $('csv-file').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f) return;
   const buf = await f.arrayBuffer();
@@ -3814,6 +3854,21 @@ $('csv-file').addEventListener('change', async (e) => {
   $('csv-paste').value = text;
   runCsvCheck();
 });
+
+function refreshLocalizedUi() {
+  if (LAST_STATS) $('stats').textContent = tt('stats.loaded', { depts: LAST_STATS.depts, members: LAST_STATS.members });
+  if (LAST_CACHE_META) renderCacheStatus(LAST_CACHE_META);
+  renderHeaderState(operations().length);
+  NODES.forEach(n => { if (n.type === 'dept') updateDeptSub(n); });
+  render();
+  renderDiff();
+  if (SELECTED) showDetail(SELECTED.kind, SELECTED.id);
+  renderHist();
+  updateLayoutButton();
+  renderActions();
+  if (!$('csvOverlay').hidden && !CSV_RESULT) $('csv-apply').textContent = tt('csv.apply');
+}
+window.addEventListener('org-localechange', refreshLocalizedUi);
 
 load();
 const runIdle = window.requestIdleCallback || ((fn) => setTimeout(fn, 250));

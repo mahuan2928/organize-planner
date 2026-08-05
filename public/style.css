@@ -111,10 +111,22 @@ body {
 }
 .tb-see { padding: 3px 4px; border-color: var(--line); background: #fff; }
 .tb-search { padding-left: 2px; }
-.tb-display, .tb-manage, .tb-help { padding-left: 0; }
+.tb-display, .tb-manage, .tb-help, .tb-lang { padding-left: 0; }
 .tb-collab .btn-domain { color: #5B35C8; border-color: #D9CEFF; background: #F7F2FF; }
 .tb-collab .btn-domain:hover { color: #4B28B7; border-color: #C6B6FF; background: #F0EAFF; }
 .tb-action { padding-left: 2px; }
+.locale-wrap {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink-3);
+  font-size: 11.5px; font-weight: 650; white-space: nowrap;
+}
+.locale-select {
+  height: 24px; min-width: 76px; border: none; outline: none;
+  background: transparent; color: var(--ink-2);
+  font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
+}
 
 /* stats badge */
 .stats {
@@ -673,7 +685,6 @@ body {
   transition: border-color .13s ease, box-shadow .13s ease;
 }
 .csv-paste:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); background: var(--surface); }
-.csv-actions { display: flex; }
 .csv-preview { border: 1px solid var(--line); border-radius: var(--r-md); overflow: auto; max-height: 320px; }
 .csv-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .csv-table th {
@@ -686,9 +697,14 @@ body {
 .csv-table tr.row-ok td:last-child { color: var(--success); }
 .csv-table tr.row-ng { background: var(--danger-bg); }
 .csv-table tr.row-ng td:last-child { color: var(--danger); }
-.csv-foot { display: flex; align-items: center; gap: 12px; }
-.csv-summary { font-size: 12.5px; color: var(--ink-2); }
-.csv-foot .act-primary { margin-left: auto; }
+.csv-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.csv-summary { flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
+.csv-foot-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none; }
+@media (max-width: 520px) {
+  .csv-foot { align-items: stretch; flex-direction: column; }
+  .csv-foot-actions { width: 100%; }
+  .csv-foot-actions .act { flex: 1; }
+}
 
 /* ---------- 10. Footer ---------- */
 .footer {

@@ -19,90 +19,100 @@
         </svg>
       </span>
       <div>
-        <div class="title">組織プランナー <span class="title-suffix">for Lark</span></div>
+        <div class="title"><span data-i18n="brand.title">組織プランナー</span> <span class="title-suffix" data-i18n="brand.suffix">for Lark</span></div>
         <div class="subtitle">
-          <span class="src-badge">Lark 組織連携</span>
-          <span id="stats">読み込み中…</span>
+          <span class="src-badge" data-i18n="brand.badge">Lark 組織連携</span>
+          <span id="stats" data-i18n="status.loading">読み込み中…</span>
           <span class="sub-sep">・</span>
-          <span class="sync-label">最終同期 <span id="syncTime">--:--</span></span>
+          <span class="sync-label"><span data-i18n="status.lastSync">最終同期</span> <span id="syncTime">--:--</span></span>
           <span id="cacheStatus" class="cache-status" hidden></span>
           <span id="syncDot" class="sync-dot" aria-hidden="true"></span>
           <span id="sessionInfo" class="session-info" hidden>
             <span class="sub-sep">・</span>
             <span class="si-name"></span>
-            <a class="si-out" href="/auth/logout">ログアウト</a>
+            <a class="si-out" href="/auth/logout" data-i18n="auth.logout">ログアウト</a>
           </span>
         </div>
       </div>
     </div>
 
     <div class="statuschips">
-      <span id="chip-draft" class="stchip st-gray">変更なし</span>
-      <span id="chip-plan" class="stchip st-gray">実行プラン未保存</span>
+      <span id="chip-draft" class="stchip st-gray" data-i18n="status.noChanges">変更なし</span>
+      <span id="chip-plan" class="stchip st-gray" data-i18n="status.planUnsaved">実行プラン未保存</span>
     </div>
 
     <div class="toolbar">
-      <div class="tb-group tb-view tb-see" aria-label="表示ビュー">
-        <div id="viewSeg" class="view-seg" role="tablist" aria-label="表示スタイル">
-          <button class="vseg on" data-view="chart" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/></svg>組織図</button>
-          <button class="vseg" data-view="outline" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>一覧</button>
-          <button class="vseg" data-view="board" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>部門ボード</button>
+      <div class="tb-group tb-view tb-see" aria-label="表示ビュー" data-i18n-aria-label="toolbar.viewLabel">
+        <div id="viewSeg" class="view-seg" role="tablist" aria-label="表示スタイル" data-i18n-aria-label="toolbar.viewStyle">
+          <button class="vseg on" data-view="chart" role="tab" aria-selected="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-2h12v2"/></svg><span data-i18n="toolbar.chart">組織図</span></button>
+          <button class="vseg" data-view="outline" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span data-i18n="toolbar.outline">一覧</span></button>
+          <button class="vseg" data-view="board" role="tab" aria-selected="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span data-i18n="toolbar.board">部門ボード</span></button>
         </div>
-        <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか">
-          <button class="dseg on" data-density="simple" role="tab" aria-selected="true">部門のみ</button>
-          <button class="dseg" data-density="full" role="tab">全員</button>
+        <div id="densitySeg" class="dens-seg" role="tablist" aria-label="表示密度" title="部門ツリーに人員を表示するか" data-i18n-aria-label="toolbar.density" data-i18n-title="toolbar.densityTitle">
+          <button class="dseg on" data-density="simple" role="tab" aria-selected="true" data-i18n="toolbar.deptOnly">部門のみ</button>
+          <button class="dseg" data-density="full" role="tab" data-i18n="toolbar.allMembers">全員</button>
         </div>
       </div>
       <div class="tb-group tb-search">
         <div class="search-wrap">
-          <input id="search" class="search-input" type="text" placeholder="部門名・メンバー名で検索" autocomplete="off">
+          <input id="search" class="search-input" type="text" placeholder="部門名・メンバー名で検索" autocomplete="off" data-i18n-placeholder="toolbar.search.placeholder">
           <div id="search-results" class="search-results" hidden></div>
         </div>
       </div>
       <div class="tb-group tb-display">
         <div class="more-wrap">
-          <button id="displayMenuBtn" class="btn btn-domain" type="button" aria-label="表示設定メニュー">表示設定 ▾</button>
+          <button id="displayMenuBtn" class="btn btn-domain" type="button" aria-label="表示設定メニュー" data-i18n="toolbar.display" data-i18n-aria-label="toolbar.displayMenu">表示設定 ▾</button>
           <div id="displayMenu" class="more-menu domain-menu" hidden>
-            <label id="reportToggleWrap" class="mm-item mm-check" hidden title="上長（レポートライン）の関係を線で表示します"><input type="checkbox" id="reportToggle"><span>レポートライン</span></label>
+            <label id="reportToggleWrap" class="mm-item mm-check" hidden title="上長（レポートライン）の関係を線で表示します" data-i18n-title="toolbar.reportTitle"><input type="checkbox" id="reportToggle"><span data-i18n="toolbar.reportLine">レポートライン</span></label>
             <div class="mm-sep"></div>
-            <button id="layout" class="mm-item">表示: コンパクト</button>
-            <button id="expandAll" class="mm-item">すべて展開</button>
-            <button id="collapseAll" class="mm-item">すべて折りたたむ</button>
-            <button id="fit" class="mm-item">全体を表示</button>
+            <button id="layout" class="mm-item" data-i18n="toolbar.layoutCompact">表示: コンパクト</button>
+            <button id="expandAll" class="mm-item" data-i18n="toolbar.expandAll">すべて展開</button>
+            <button id="collapseAll" class="mm-item" data-i18n="toolbar.collapseAll">すべて折りたたむ</button>
+            <button id="fit" class="mm-item" data-i18n="toolbar.fit">全体を表示</button>
           </div>
         </div>
       </div>
       <div class="tb-group tb-action">
-        <button id="actionMain" class="btn btn-primary" disabled>変更なし</button>
+        <button id="actionMain" class="btn btn-primary" disabled data-i18n="status.noChanges">変更なし</button>
       </div>
       <div class="tb-group tb-collab">
         <div class="more-wrap">
-          <button id="collabMenuBtn" class="btn btn-domain" type="button" aria-label="連携メニュー">連携 ▾</button>
+          <button id="collabMenuBtn" class="btn btn-domain" type="button" aria-label="連携メニュー" data-i18n="toolbar.collab" data-i18n-aria-label="toolbar.collabMenu">連携 ▾</button>
           <div id="collabMenu" class="more-menu domain-menu" hidden>
-            <button id="menuChatGroup" class="mm-item">役職からチャットグループ作成</button>
+            <button id="menuChatGroup" class="mm-item" data-i18n="toolbar.createRoleChat">役職からチャットグループ作成</button>
           </div>
         </div>
       </div>
       <div class="tb-group tb-manage">
         <div class="more-wrap">
-          <button id="manageMenuBtn" class="btn btn-domain" type="button" aria-label="管理メニュー">管理 ▾</button>
+          <button id="manageMenuBtn" class="btn btn-domain" type="button" aria-label="管理メニュー" data-i18n="toolbar.manage" data-i18n-aria-label="toolbar.manageMenu">管理 ▾</button>
           <div id="manageMenu" class="more-menu domain-menu" hidden>
-            <button id="reload" class="mm-item">再読み込み（キャッシュ可）</button>
-            <button id="forceReload" class="mm-item">強制同期</button>
-            <button id="csvImport" class="mm-item">CSVインポート…</button>
-            <button id="exportTreePdf" class="mm-item">ツリー図をPDF出力</button>
-            <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener">Base 台帳を開く ↗</a>
+            <button id="reload" class="mm-item" data-i18n="toolbar.reload">再読み込み（キャッシュ可）</button>
+            <button id="forceReload" class="mm-item" data-i18n="toolbar.forceReload">強制同期</button>
+            <button id="csvImport" class="mm-item" data-i18n="toolbar.csvImport">CSVインポート…</button>
+            <button id="exportTreePdf" class="mm-item" data-i18n="toolbar.exportPdf">ツリー図をPDF出力</button>
+            <a id="baselink" class="mm-item" href="#" target="_blank" rel="noopener" data-i18n="toolbar.openBase">Base 台帳を開く ↗</a>
             <div class="mm-sep"></div>
-            <button id="planList" class="mm-item">実行プラン一覧…</button>
-            <button id="menuReview" class="mm-item">変更内容を開く</button>
-            <button id="menuHistory" class="mm-item">操作履歴を開く</button>
+            <button id="planList" class="mm-item" data-i18n="toolbar.planList">実行プラン一覧…</button>
+            <button id="menuReview" class="mm-item" data-i18n="toolbar.openChanges">変更内容を開く</button>
+            <button id="menuHistory" class="mm-item" data-i18n="toolbar.openHistory">操作履歴を開く</button>
             <div class="mm-sep"></div>
-            <button id="reset" class="mm-item mm-warn" disabled>変更を破棄…</button>
+            <button id="reset" class="mm-item mm-warn" disabled data-i18n="toolbar.reset">変更を破棄…</button>
           </div>
         </div>
       </div>
+      <div class="tb-group tb-lang">
+        <label class="locale-wrap" for="localeSelect">
+          <span data-i18n="toolbar.language">言語</span>
+          <select id="localeSelect" class="locale-select" aria-label="言語">
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+          </select>
+        </label>
+      </div>
       <div class="tb-group tb-help">
-        <button id="guideBtn" class="btn btn-guide btn-help" type="button" title="ガイド" aria-label="ガイド">?</button>
+        <button id="guideBtn" class="btn btn-guide btn-help" type="button" title="ガイド" aria-label="ガイド" data-i18n-title="toolbar.guide" data-i18n-aria-label="toolbar.guide">?</button>
       </div>
     </div>
   </header>
@@ -111,8 +121,8 @@
 
   <div id="draftSafe" class="draft-safe" hidden>
     <span class="ds-dot" aria-hidden="true"></span>
-    <span class="ds-text">下書きモード ・ <b id="ds-count">0件</b> ・ 変更は「実行」まで <b>Lark に反映されません</b>。いつでも取り消せます。</span>
-    <button id="ds-review" class="ds-link" type="button">変更内容を見る</button>
+    <span class="ds-text" data-i18n-html="draftSafe.html">下書きモード ・ <b id="ds-count">0件</b> ・ 変更は「実行」まで <b>Lark に反映されません</b>。いつでも取り消せます。</span>
+    <button id="ds-review" class="ds-link" type="button" data-i18n="draftSafe.review">変更内容を見る</button>
   </div>
 
   <div class="main">
@@ -121,20 +131,20 @@
       <div id="altView" class="alt-view" hidden></div>
 
       <div id="focusBar" class="focus-bar" hidden>
-        <button id="fb-back" class="fb-back" type="button" hidden>◀ 戻る</button>
+        <button id="fb-back" class="fb-back" type="button" hidden data-i18n="focus.back">◀ 戻る</button>
         <div id="fb-crumb" class="fb-crumb"></div>
-        <select id="fb-siblings" class="fb-siblings" hidden title="同じ階層の部門へ移動"></select>
+        <select id="fb-siblings" class="fb-siblings" hidden title="同じ階層の部門へ移動" data-i18n-title="focus.siblingsTitle"></select>
       </div>
 
       <div id="startPanel" class="start-panel" hidden>
         <div class="sp-card">
-          <div class="sp-title">組織調整を始める</div>
-          <div class="sp-desc">調整したい部門を選んでください。選ぶと、その部門と<b>すぐ上・すぐ下だけ</b>が表示されます。編集はすべて下書きで、実行するまで Lark には反映されません。</div>
-          <input id="sp-search" class="sp-search" type="text" placeholder="部門名で検索…" autocomplete="off">
-          <div id="sp-result-wrap" class="sp-group" hidden><div class="sp-glabel">検索結果</div><div id="sp-result" class="sp-chips"></div></div>
-          <div id="sp-recent-wrap" class="sp-group" hidden><div class="sp-glabel">最近見た部門</div><div id="sp-recent" class="sp-chips"></div></div>
-          <div id="sp-top-wrap" class="sp-group" hidden><div class="sp-glabel">人数の多い部門</div><div id="sp-top" class="sp-chips"></div></div>
-          <button id="sp-all" class="sp-all" type="button">組織図を全体表示する →</button>
+          <div class="sp-title" data-i18n="start.title">組織調整を始める</div>
+          <div class="sp-desc" data-i18n-html="start.desc.html">調整したい部門を選んでください。選ぶと、その部門と<b>すぐ上・すぐ下だけ</b>が表示されます。編集はすべて下書きで、実行するまで Lark には反映されません。</div>
+          <input id="sp-search" class="sp-search" type="text" placeholder="部門名で検索…" autocomplete="off" data-i18n-placeholder="start.search.placeholder">
+          <div id="sp-result-wrap" class="sp-group" hidden><div class="sp-glabel" data-i18n="start.searchResults">検索結果</div><div id="sp-result" class="sp-chips"></div></div>
+          <div id="sp-recent-wrap" class="sp-group" hidden><div class="sp-glabel" data-i18n="start.recent">最近見た部門</div><div id="sp-recent" class="sp-chips"></div></div>
+          <div id="sp-top-wrap" class="sp-group" hidden><div class="sp-glabel" data-i18n="start.top">人数の多い部門</div><div id="sp-top" class="sp-chips"></div></div>
+          <button id="sp-all" class="sp-all" type="button" data-i18n="start.showAll">組織図を全体表示する →</button>
         </div>
       </div>
 
@@ -142,33 +152,33 @@
         <div class="sk-row"><div class="sk-card sk-w1"></div></div>
         <div class="sk-row"><div class="sk-card"></div><div class="sk-card"></div><div class="sk-card"></div></div>
         <div class="sk-row"><div class="sk-card"></div><div class="sk-card"></div></div>
-        <div class="sk-text">組織データを同期しています…</div>
+        <div class="sk-text" data-i18n="sync.loading">組織データを同期しています…</div>
       </div>
 
       <div id="syncFail" class="sync-fail" hidden>
         <div class="sf-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#D92D20" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 10v4M12 17.2v.3"/></svg></div>
-        <div class="sf-title">同期に失敗しました</div>
+        <div class="sf-title" data-i18n="sync.failed">同期に失敗しました</div>
         <div id="syncFailMsg" class="sf-msg"></div>
-        <button id="retryBtn" class="act act-primary">再試行</button>
+        <button id="retryBtn" class="act act-primary" data-i18n="sync.retry">再試行</button>
       </div>
 
       <div id="dragHint" class="drag-hint" hidden></div>
 
-      <div class="zoom-ctrl" aria-label="ズーム操作">
-        <button id="zoom-in" class="zoom-btn" title="拡大" aria-label="拡大">＋</button>
-        <button id="zoom-out" class="zoom-btn" title="縮小" aria-label="縮小">−</button>
-        <button id="zoom-fit" class="zoom-btn zoom-fit" title="全体を表示" aria-label="全体を表示">
+      <div class="zoom-ctrl" aria-label="ズーム操作" data-i18n-aria-label="zoom.label">
+        <button id="zoom-in" class="zoom-btn" title="拡大" aria-label="拡大" data-i18n-title="zoom.in" data-i18n-aria-label="zoom.in">＋</button>
+        <button id="zoom-out" class="zoom-btn" title="縮小" aria-label="縮小" data-i18n-title="zoom.out" data-i18n-aria-label="zoom.out">−</button>
+        <button id="zoom-fit" class="zoom-btn zoom-fit" title="全体を表示" aria-label="全体を表示" data-i18n-title="zoom.fit" data-i18n-aria-label="zoom.fit">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
         </button>
       </div>
     </div>
 
     <aside id="sidePanel" class="side-panel">
-      <div class="sp-tabs" role="tablist" aria-label="サイドパネル">
-        <button class="sp-tab on" data-tab="review" role="tab" aria-selected="true">変更内容<span id="sp-count" class="sp-count" hidden></span></button>
-        <button class="sp-tab" data-tab="detail" role="tab" aria-selected="false">詳細</button>
-        <button class="sp-tab" data-tab="hist" role="tab" aria-selected="false">操作履歴</button>
-        <button id="sp-hide" class="sp-hide" title="パネルを折りたたむ" aria-label="パネルを折りたたむ">
+      <div class="sp-tabs" role="tablist" aria-label="サイドパネル" data-i18n-aria-label="side.label">
+        <button class="sp-tab on" data-tab="review" role="tab" aria-selected="true"><span data-i18n="side.review">変更内容</span><span id="sp-count" class="sp-count" hidden></span></button>
+        <button class="sp-tab" data-tab="detail" role="tab" aria-selected="false" data-i18n="side.detail">詳細</button>
+        <button class="sp-tab" data-tab="hist" role="tab" aria-selected="false" data-i18n="side.history">操作履歴</button>
+        <button id="sp-hide" class="sp-hide" title="パネルを折りたたむ" aria-label="パネルを折りたたむ" data-i18n-title="side.hide" data-i18n-aria-label="side.hide">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 5 7 7-7 7M14 5l7 7-7 7"/></svg>
         </button>
       </div>
@@ -177,12 +187,12 @@
         <div id="review-summary" class="review-summary"></div>
         <div id="review-empty" class="sp-empty">
           <div class="spe-icon ok">✓</div>
-          <div class="spe-title">まだ変更はありません</div>
-          <div class="spe-sub">部門またはメンバーをドラッグすると、変更内容がここに表示されます。<br>実行プランの保存 → 手動実行までは、正式な組織には反映されません。</div>
+          <div class="spe-title" data-i18n="empty.review.title">まだ変更はありません</div>
+          <div class="spe-sub" data-i18n-html="empty.review.sub.html">部門またはメンバーをドラッグすると、変更内容がここに表示されます。<br>実行プランの保存 → 手動実行までは、正式な組織には反映されません。</div>
           <div class="spe-actions">
-            <button id="reviewSearch" class="spe-btn spe-btn-primary" type="button">部門を検索する</button>
-            <button id="reviewFit" class="spe-btn" type="button">全体を表示</button>
-            <button id="reviewGuide" class="spe-btn" type="button">ガイドを見る</button>
+            <button id="reviewSearch" class="spe-btn spe-btn-primary" type="button" data-i18n="empty.review.search">部門を検索する</button>
+            <button id="reviewFit" class="spe-btn" type="button" data-i18n="empty.review.fit">全体を表示</button>
+            <button id="reviewGuide" class="spe-btn" type="button" data-i18n="empty.review.guide">ガイドを見る</button>
           </div>
         </div>
         <div id="diff-list" class="diff-list"></div>
@@ -193,8 +203,8 @@
         <div id="detail-body">
           <div class="sp-empty">
             <div class="spe-icon">ⓘ</div>
-            <div class="spe-title">オブジェクト未選択</div>
-            <div class="spe-sub">検索結果や変更内容の「表示」から部門・メンバーを選ぶと、詳細と変更前後の比較がここに表示されます。</div>
+            <div class="spe-title" data-i18n="empty.detail.title">オブジェクト未選択</div>
+            <div class="spe-sub" data-i18n="empty.detail.sub">検索結果や変更内容の「表示」から部門・メンバーを選ぶと、詳細と変更前後の比較がここに表示されます。</div>
           </div>
         </div>
       </div>
@@ -203,8 +213,8 @@
         <div id="hist-list" class="hist-list"></div>
         <div id="hist-empty" class="sp-empty">
           <div class="spe-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></div>
-          <div class="spe-title">操作履歴はまだありません</div>
-          <div class="spe-sub">この画面で行った下書きの編集・実行プランの保存・実行の記録が表示されます（このセッション内）。すべての履歴は Base の監査ログをご確認ください。</div>
+          <div class="spe-title" data-i18n="empty.history.title">操作履歴はまだありません</div>
+          <div class="spe-sub" data-i18n="empty.history.sub">この画面で行った下書きの編集・実行プランの保存・実行の記録が表示されます（このセッション内）。すべての履歴は Base の監査ログをご確認ください。</div>
         </div>
       </div>
     </aside>
@@ -217,56 +227,56 @@
         <div id="drawer-dept" class="drawer-dept"></div>
         <div id="drawer-count" class="drawer-count"></div>
       </div>
-      <button id="drawer-close" class="drawer-close" title="閉じる">✕</button>
+      <button id="drawer-close" class="drawer-close" title="閉じる" data-i18n-title="drawer.close">✕</button>
     </div>
-    <div class="drawer-hint">メンバーを移動先の部門へドラッグすると、異動内容が下書きに追加されます。</div>
+    <div class="drawer-hint" data-i18n="drawer.hint">メンバーを移動先の部門へドラッグすると、異動内容が下書きに追加されます。</div>
     <div id="drawer-list" class="drawer-list"></div>
   </aside>
 
   <div id="addBar" class="move-bar" hidden>
     <span id="add-label" class="move-label"></span>
-    <input id="add-name" class="search-input add-input" type="text" placeholder="新しい部門名を入力" autocomplete="off">
-    <button id="add-ok" class="move-top">追加</button>
-    <button id="add-cancel" class="move-cancel" title="キャンセル" aria-label="キャンセル">✕</button>
+    <input id="add-name" class="search-input add-input" type="text" placeholder="新しい部門名を入力" autocomplete="off" data-i18n-placeholder="add.name.placeholder">
+    <button id="add-ok" class="move-top" data-i18n="action.add">追加</button>
+    <button id="add-cancel" class="move-cancel" title="キャンセル" aria-label="キャンセル" data-i18n-title="action.cancel" data-i18n-aria-label="action.cancel">✕</button>
   </div>
 
   <div id="addMenu" class="add-menu" hidden>
-    <button id="addmenu-dept" class="mm-item">配下に部門を追加</button>
-    <button id="addmenu-member" class="mm-item">メンバーを追加</button>
+    <button id="addmenu-dept" class="mm-item" data-i18n="addMenu.dept">配下に部門を追加</button>
+    <button id="addmenu-member" class="mm-item" data-i18n="addMenu.member">メンバーを追加</button>
   </div>
 
   <div id="planOverlay" class="csv-overlay" hidden>
-    <div class="csv-modal plan-modal" role="dialog" aria-label="実行プラン一覧">
+    <div class="csv-modal plan-modal" role="dialog" aria-label="実行プラン一覧" data-i18n-aria-label="planList.title">
       <div class="csv-head">
         <div>
-          <div class="csv-title">実行プラン一覧</div>
-          <div class="csv-sub">保存した実行プランを再読み込み後も開いて実行できます</div>
+          <div class="csv-title" data-i18n="planList.title">実行プラン一覧</div>
+          <div class="csv-sub" data-i18n="planList.sub">保存した実行プランを再読み込み後も開いて実行できます</div>
         </div>
-        <button id="plan-close" class="csv-close" title="閉じる" aria-label="閉じる">✕</button>
+        <button id="plan-close" class="csv-close" title="閉じる" aria-label="閉じる" data-i18n-title="drawer.close" data-i18n-aria-label="drawer.close">✕</button>
       </div>
       <div id="plan-list" class="plan-list"></div>
     </div>
   </div>
 
   <div id="memberOverlay" class="csv-overlay" hidden>
-    <div class="cfm-modal" role="dialog" aria-label="メンバーを追加">
-      <div class="cfm-title">メンバーを追加</div>
+    <div class="cfm-modal" role="dialog" aria-label="メンバーを追加" data-i18n-aria-label="memberAdd.title">
+      <div class="cfm-title" data-i18n="memberAdd.title">メンバーを追加</div>
       <div id="mm-dept" class="cfm-meta"></div>
       <div class="mm-form">
-        <label class="act-lbl" for="mm-name">氏名 <span class="req">*</span></label>
+        <label class="act-lbl" for="mm-name"><span data-i18n="memberAdd.name">氏名</span> <span class="req">*</span></label>
         <input id="mm-name" class="act-input" autocomplete="off">
-        <label class="act-lbl" for="mm-email">メールアドレス <span class="req">*</span>（招待の送付先）</label>
+        <label class="act-lbl" for="mm-email"><span data-i18n="memberAdd.email">メールアドレス</span> <span class="req">*</span><span data-i18n="memberAdd.emailHint">（招待の送付先）</span></label>
         <input id="mm-email" class="act-input" type="email" autocomplete="off">
-        <label class="act-lbl" for="mm-mobile">携帯番号 <span class="req">*</span>（Lark アカウントの識別子）</label>
+        <label class="act-lbl" for="mm-mobile"><span data-i18n="memberAdd.mobile">携帯番号</span> <span class="req">*</span><span data-i18n="memberAdd.mobileHint">（Lark アカウントの識別子）</span></label>
         <input id="mm-mobile" class="act-input" placeholder="+819012345678" autocomplete="off">
-        <label class="act-lbl" for="mm-title">役職（任意）</label>
+        <label class="act-lbl" for="mm-title" data-i18n="memberAdd.titleField">役職（任意）</label>
         <input id="mm-title" class="act-input" autocomplete="off">
-        <label class="act-lbl" for="mm-emptype">雇用形態</label>
+        <label class="act-lbl" for="mm-emptype" data-i18n="memberAdd.empType">雇用形態</label>
         <select id="mm-emptype" class="act-input"></select>
       </div>
       <div id="mm-err" class="act-note act-err" hidden></div>
-      <div class="act-note">追加は下書きに入ります。実行時に Lark へ招待が送信されます。</div>
-      <div class="act-row"><button id="mm-ok" class="act act-primary">下書きに追加</button><button id="mm-cancel" class="act">キャンセル</button></div>
+      <div class="act-note" data-i18n="memberAdd.note">追加は下書きに入ります。実行時に Lark へ招待が送信されます。</div>
+      <div class="act-row"><button id="mm-ok" class="act act-primary" data-i18n="memberAdd.submit">下書きに追加</button><button id="mm-cancel" class="act" data-i18n="action.cancel">キャンセル</button></div>
     </div>
   </div>
 
@@ -275,79 +285,83 @@
   <div id="leaderBar" class="move-bar" hidden>
     <span id="leader-label" class="move-label"></span>
     <div class="search-wrap">
-      <input id="leader-search" class="search-input" type="text" placeholder="部門内のメンバーを検索" autocomplete="off">
+      <input id="leader-search" class="search-input" type="text" placeholder="部門内のメンバーを検索" autocomplete="off" data-i18n-placeholder="leader.search.placeholder">
       <div id="leader-results" class="search-results" hidden></div>
     </div>
-    <button id="leader-clear" class="move-top" hidden>責任者を解除</button>
-    <span class="move-hint">「推奨」は部門内の最上位者を目安表示。実際の責任者を選択してください</span>
-    <button id="leader-cancel" class="move-cancel" title="キャンセル" aria-label="キャンセル">✕</button>
+    <button id="leader-clear" class="move-top" hidden data-i18n="leader.clear">責任者を解除</button>
+    <span class="move-hint" data-i18n="leader.hint">「推奨」は部門内の最上位者を目安表示。実際の責任者を選択してください</span>
+    <button id="leader-cancel" class="move-cancel" title="キャンセル" aria-label="キャンセル" data-i18n-title="action.cancel" data-i18n-aria-label="action.cancel">✕</button>
   </div>
 
   <div id="moveBar" class="move-bar" hidden>
     <span id="move-label" class="move-label"></span>
     <div class="search-wrap">
-      <input id="move-search" class="search-input" type="text" placeholder="異動先の部門を検索…" autocomplete="off">
+      <input id="move-search" class="search-input" type="text" placeholder="異動先の部門を検索…" autocomplete="off" data-i18n-placeholder="move.search.placeholder">
       <div id="move-results" class="search-results" hidden></div>
     </div>
-    <button id="move-top" class="move-top" hidden>トップ階層へ</button>
-    <button id="move-concurrent" class="move-toggle" hidden aria-pressed="false">兼任として追加</button>
-    <button id="move-clear" class="move-top" hidden>上長を解除</button>
-    <span class="move-hint">または部門カードをクリック</span>
-    <button id="move-cancel" class="move-cancel" title="キャンセル" aria-label="キャンセル">✕</button>
+    <button id="move-top" class="move-top" hidden data-i18n="move.top">トップ階層へ</button>
+    <button id="move-concurrent" class="move-toggle" hidden aria-pressed="false" data-i18n="move.concurrent">兼任として追加</button>
+    <button id="move-clear" class="move-top" hidden data-i18n="move.clearLeader">上長を解除</button>
+    <span class="move-hint" data-i18n="move.hint">または部門カードをクリック</span>
+    <button id="move-cancel" class="move-cancel" title="キャンセル" aria-label="キャンセル" data-i18n-title="action.cancel" data-i18n-aria-label="action.cancel">✕</button>
   </div>
 
   <div id="csvOverlay" class="csv-overlay" hidden>
-    <div class="csv-modal" role="dialog" aria-modal="true" aria-label="CSVインポート">
+    <div class="csv-modal" role="dialog" aria-modal="true" aria-label="CSVインポート" data-i18n-aria-label="csv.label">
       <div class="csv-head">
         <div>
-          <div class="csv-title">CSVインポート（部門・メンバー）</div>
-          <div class="csv-sub">部門: 追加・移動・改名・削除 ／ メンバー: 異動・更新（役職/上長）・追加・削除。ヘッダー行で自動判別します</div>
+          <div class="csv-title" data-i18n="csv.title">CSVインポート（部門・メンバー）</div>
+          <div class="csv-sub" data-i18n="csv.sub">部門: 追加・移動・改名・削除 ／ メンバー: 異動・更新（役職/上長）・追加・削除。ヘッダー行で自動判別します</div>
         </div>
-        <button id="csv-close" class="csv-close" title="閉じる" aria-label="閉じる">✕</button>
+        <button id="csv-close" class="csv-close" title="閉じる" aria-label="閉じる" data-i18n-title="drawer.close" data-i18n-aria-label="drawer.close">✕</button>
       </div>
       <div class="csv-tpl">
-        <span class="csv-tpl-label">テンプレート:</span>
-        <button id="tpl-dept" class="act">部門CSV</button>
-        <button id="tpl-mem" class="act">メンバーCSV</button>
+        <span class="csv-tpl-label" data-i18n="csv.template">テンプレート:</span>
+        <button id="tpl-dept" class="act" data-i18n="csv.deptTemplate">部門CSV</button>
+        <button id="tpl-mem" class="act" data-i18n="csv.memberTemplate">メンバーCSV</button>
         <label class="csv-filebtn act">
-          ファイルを選択<input id="csv-file" type="file" accept=".csv,.tsv,.txt" hidden>
+          <span data-i18n="csv.chooseFile">ファイルを選択</span><input id="csv-file" type="file" accept=".csv,.tsv,.txt" hidden>
         </label>
       </div>
-      <div class="csv-hint">または Excel から範囲をコピーして、下に貼り付けてください（タブ区切りのまま OK）</div>
-      <textarea id="csv-paste" class="csv-paste" placeholder="アクション,部門名,親部門,新部門名&#10;追加,新規事業部,組織全体,&#10;移動,DS,Sales,&#10;改名,Presales,,プリセールス部&#10;削除,旧営業部,,"></textarea>
-      <div class="csv-actions">
-        <button id="csv-check" class="act act-primary">チェックする</button>
-      </div>
+      <div class="csv-hint" data-i18n="csv.hint">または Excel から範囲をコピーして、下に貼り付けてください（タブ区切りのまま OK）</div>
+      <textarea id="csv-paste" class="csv-paste" placeholder="アクション,部門名,親部門,新部門名&#10;追加,新規事業部,組織全体,&#10;移動,DS,Sales,&#10;改名,Presales,,プリセールス部&#10;削除,旧営業部,," data-i18n-placeholder="csv.placeholder"></textarea>
       <div id="csv-preview" class="csv-preview" hidden></div>
       <div class="csv-foot">
         <span id="csv-summary" class="csv-summary"></span>
-        <button id="csv-apply" class="act act-primary" disabled>下書きに反映</button>
+        <div class="csv-foot-actions">
+          <button id="csv-check" class="act" data-i18n="csv.check">チェックする</button>
+          <button id="csv-apply" class="act act-primary" disabled data-i18n="csv.apply">下書きに反映</button>
+        </div>
       </div>
     </div>
   </div>
 
   <div id="cfmOverlay" class="csv-overlay" hidden>
-    <div class="cfm-modal" role="dialog" aria-modal="true" aria-label="確認">
-      <div id="cfm-title" class="cfm-title">確認</div>
+    <div class="cfm-modal" role="dialog" aria-modal="true" aria-label="確認" data-i18n-aria-label="confirm.label">
+      <div id="cfm-title" class="cfm-title" data-i18n="confirm.title">確認</div>
       <div id="cfm-stats" class="cfm-body"></div>
       <label id="cfm-checkwrap" class="cfm-check" hidden>
         <input type="checkbox" id="cfm-agree">
         <span id="cfm-checklabel"></span>
       </label>
       <div class="act-row cfm-actions">
-        <button id="cfm-ok" class="act act-danger" disabled>実行する</button>
-        <button id="cfm-cancel" class="act">キャンセル</button>
+        <button id="cfm-ok" class="act act-danger" disabled data-i18n="confirm.execute">実行する</button>
+        <button id="cfm-cancel" class="act" data-i18n="action.cancel">キャンセル</button>
       </div>
     </div>
   </div>
 
-  <button id="panelToggle" class="panel-toggle">変更内容<span id="pt-count" class="sp-count" hidden></span></button>
+  <button id="panelToggle" class="panel-toggle"><span data-i18n="panelToggle">変更内容</span><span id="pt-count" class="sp-count" hidden></span></button>
 
   <footer class="footer">
-    <span class="foot-left"><span class="status-dot" aria-hidden="true"></span>ローカル環境 ・ Lark Base 同期</span>
-    <span class="foot-right">組織改編は「実行プランの保存 → 手動実行」の 2 段階で反映されます</span>
+    <span class="foot-left"><span class="status-dot" aria-hidden="true"></span><span data-i18n="footer.left">ローカル環境 ・ Lark Base 同期</span></span>
+    <span class="foot-right" data-i18n="footer.right">組織改編は「実行プランの保存 → 手動実行」の 2 段階で反映されます</span>
   </footer>
 
+  <script src="/locales/ja.js" defer></script>
+  <script src="/locales/en.js" defer></script>
+  <script src="/locales/zh.js" defer></script>
+  <script src="/i18n.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
